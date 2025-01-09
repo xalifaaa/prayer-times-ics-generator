@@ -15,8 +15,8 @@ A Python application that generates .ics calendar files for Islamic prayer times
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/prayer_times_calendar.git
-cd prayer_times_calendar
+git clone https://github.com/xalifaaa/prayer-times-ics-generator.git
+cd prayer-times-ics-generator
 ```
 
 2. Install required dependencies:
