@@ -34,6 +34,132 @@ class PrayerConfig:
     ADHAN_COLOR = "#008000"  # Green
     PRAYER_COLOR = "#ba1e55"  # Proton Calendar's Cerise
 
+class TokenManager:
+    """Manages the authentication token for AWQAF API"""
+    TOKEN_FILE = "auth_token.json"
+    CONFIG_FILE = "config.json"
+    TOKEN_URL = "https://www.awqaf.gov.ae/prayer-times?lang=en"
+    REFRESH_URL = "https://mobileappapi.awqaf.gov.ae/APIS/v2/sso/ClientAuthorization?lang=ar"
+    MAX_RETRIES = 3
+    RETRY_DELAY = 1  # seconds
+    TIMEZONE = pytz.timezone('Asia/Dubai')
+    
+    @classmethod
+    def _load_config(cls) -> dict:
+        """
+        Load client configuration from config file.
+        
+        Returns:
+            dict: Configuration containing clientGuid and clientSecret
+            
+        Raises:
+            Exception: If config file is missing or invalid
+        """
+        try:
+            with open(cls.CONFIG_FILE, 'r') as f:
+                config = json.load(f)
+                
+            required_fields = {'clientGuid', 'clientSecret'}
+            if not all(field in config for field in required_fields):
+                raise KeyError("Missing required fields in config file")
+                
+            return config
+        except FileNotFoundError:
+            raise Exception(
+                f"Configuration file '{cls.CONFIG_FILE}' not found. "
+                "Please create it with your client credentials."
+            )
+        except json.JSONDecodeError:
+            raise Exception(f"Invalid JSON format in {cls.CONFIG_FILE}")
+        except KeyError as e:
+            raise Exception(f"Invalid config file structure: {str(e)}")
+    
+    @classmethod
+    def get_token(cls) -> str:
+        """
+        Get a valid token, refreshing if necessary.
+        
+        Returns:
+            str: Valid authentication token
+            
+        Raises:
+            Exception: If token file is invalid or token refresh fails
+        """
+        try:
+            with open(cls.TOKEN_FILE, 'r') as f:
+                token_data = json.load(f)
+                
+                # Validate token data structure
+                required_fields = {'clientAccessToken', 'clientRefreshToken', 'refreshTokenExpiryTime'}
+                if not all(field in token_data for field in required_fields):
+                    raise KeyError("Missing required fields in token data")
+                
+                current_time = datetime.fromisoformat("2025-01-10T00:47:04+04:00")
+                # Convert Unix timestamp to timezone-aware datetime
+                expiry_time = datetime.fromtimestamp(token_data['refreshTokenExpiryTime'], cls.TIMEZONE)
+                
+                # Add buffer time to ensure token doesn't expire during use
+                if current_time < expiry_time - timedelta(minutes=5):
+                    return token_data['clientAccessToken']
+                else:
+                    return cls.refresh_token()
+                    
+        except FileNotFoundError:
+            raise Exception(f"Token file '{cls.TOKEN_FILE}' not found")
+        except json.JSONDecodeError:
+            raise Exception(f"Invalid JSON format in {cls.TOKEN_FILE}")
+        except KeyError as e:
+            raise Exception(f"Invalid token file structure: {str(e)}")
+
+    @classmethod
+    def refresh_token(cls, retry_count: int = 0) -> str:
+        """
+        Refresh the access token using client credentials.
+        
+        Args:
+            retry_count (int): Current retry attempt number
+            
+        Returns:
+            str: New access token
+            
+        Raises:
+            Exception: If token refresh fails after all retries
+        """
+        try:
+            config = cls._load_config()
+        except Exception as e:
+            raise Exception(f"Failed to load configuration: {str(e)}")
+            
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
+        data = {
+            "clientGuid": config['clientGuid'],
+            "clientSecret": config['clientSecret']
+        }
+        
+        try:
+            response = requests.post(cls.REFRESH_URL, headers=headers, json=data, timeout=10)
+            response.raise_for_status()
+            
+            token_data = response.json()
+            if not all(key in token_data for key in ['clientAccessToken', 'clientRefreshToken', 'refreshTokenExpiryTime']):
+                raise ValueError("Invalid response format from authorization endpoint")
+            
+            # Save new token data
+            with open(cls.TOKEN_FILE, 'w') as f:
+                json.dump(token_data, f, indent=4)
+            
+            return token_data['clientAccessToken']
+            
+        except (requests.exceptions.RequestException, ValueError) as e:
+            if retry_count < cls.MAX_RETRIES:
+                import time
+                time.sleep(cls.RETRY_DELAY * (retry_count + 1))
+                return cls.refresh_token(retry_count + 1)
+            raise Exception(f"Failed to refresh token after {cls.MAX_RETRIES} attempts: {str(e)}")
+
 class AWQAFApi:
     """Handles interactions with the AWQAF Prayer Times API"""
     BASE_URL = "https://mobileappapi.awqaf.gov.ae/APIS/v2/prayer-time/prayertimes"
@@ -68,7 +194,7 @@ class AWQAFApi:
             'Accept': '*/*',
             'Accept-Language': 'en-US,en;q=0.5',
             'Accept-Encoding': 'gzip, deflate, br, zstd',
-            'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJBUElTZXJ2aWNlQWNjZXNzVG9rZW4iLCJqdGkiOiI2NGI0Mjk0OS00MjVmLTQ5ZjAtOWFlOC1jNmNlZjViZWQ4NTMiLCJpYXQiOjE3MzY0MjExMDEsIkNsaWVudEFJRCI6IjEiLCJDbGllbnRHVUlEIjoiV2Vic2l0ZS5DbGllbnQiLCJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9uYW1lIjoiV2Vic2l0ZS5DbGllbnQiLCJleHAiOjE3MzY0MjgzMDEsImlzcyI6IkFXUUFGU1NPIiwiYXVkIjoiQVdRQUZDbGllbnRzIn0.WZwmOkkDvFZHvaP219FaRfHGUS4fs79k4IkwWzypgrM',
+            'Authorization': f'Bearer {TokenManager.get_token()}',
             'Origin': 'https://www.awqaf.gov.ae',
             'DNT': '1',
             'Connection': 'keep-alive',
