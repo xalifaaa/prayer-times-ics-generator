@@ -34,6 +34,25 @@ pip install -r requirements.txt
 
 **Important**: Keep your `config.json` file secure and never commit it to version control.
 
+## Setup
+
+Follow the steps below to locate your clientGUID and clientSecret and start using the script:
+1. Head to https://www.awqaf.gov.ae
+2. Clear Cookies
+3. Open Developer Tools (Ctrl+Shift+I)/(F12)
+4. Navigate to 'Network' tab
+5. Refresh the page
+6. Filter by JSON or XHR, depending on your browser
+7. Locate 'mobileappapi.awqaf.gov.ae' within the 'Domain' column
+8. Find the JSON file with the today's date
+9. Click on the JSON file
+10. Under 'Request Headers', locate 'Authorization' and note down the last 6 characters
+11. Search through each 'ClientAuthorization' -> 'Response' tab to find the clientAccessToken with the same last 6 characters you noted down
+12. Upon finding the correct 'ClientAuthorization' JSON file, copy the 'clientGUID' and 'clientSecret' values under the 'Request' tab, and paste them into the 'config.json' file
+13. Save the 'config.json' file
+
+After completing the steps above head to the usage section below to start using the script.
+
 ## Usage
 
 Run the script with the following command:
