@@ -32,7 +32,14 @@ pip install -r requirements.txt
 }
 ```
 
-**Important**: Keep your `config.json` file secure and never commit it to version control.
+4. Create a `auth_token.json` file in the project root to store the authentication token:
+{
+    "clientAccessToken": "your_Access_Token",
+    "clientRefreshToken": "your_Refresh_Token",
+    "refreshTokenExpiryTime": 0000000000
+}
+
+**Important**: Keep your `config.json` and `auth_token.json` files secure and never commit it to version control.
 
 ## Setup
 
