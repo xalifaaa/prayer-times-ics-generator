@@ -1,6 +1,7 @@
 # Sensitive configuration files
 config.json
 auth_token.json
+auth_token.json
 
 # Python
 __pycache__/
