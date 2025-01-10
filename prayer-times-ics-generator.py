@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Prayer Times Calendar Generator
-Generates ICS calendar files for prayer times using the AWQAF API.
+UAE Prayer Times Calendar Events Generator
+Generates .ics calendar files for prayer times using the official UAE AWQAF Prayer Times and Locations API.
 """
 
 import argparse
@@ -89,15 +89,13 @@ class TokenManager:
             with open(cls.TOKEN_FILE, 'r') as f:
                 try:
                     token_data = json.load(f)
-                    print(f"Read token data: {token_data}")  # Debug log
                 except json.JSONDecodeError as e:
-                    print(f"JSON decode error: {str(e)}")  # Debug log
-                    raise
+                    return cls.refresh_token()
                 
                 # Validate token data structure
                 required_fields = {'clientAccessToken', 'clientRefreshToken', 'refreshTokenExpiryTime'}
                 if not all(field in token_data for field in required_fields):
-                    raise KeyError("Missing required fields in token data")
+                    return cls.refresh_token()
                 
                 # If we have no expiry time or empty tokens, refresh
                 if (token_data['refreshTokenExpiryTime'] is None or 
@@ -105,20 +103,10 @@ class TokenManager:
                     not token_data['clientRefreshToken']):
                     return cls.refresh_token()
                 
-                current_time = datetime.now(cls.TIMEZONE)
-                # Convert Unix timestamp to timezone-aware datetime
-                expiry_time = datetime.fromtimestamp(token_data['refreshTokenExpiryTime'], cls.TIMEZONE)
-                
-                # Add buffer time to ensure token doesn't expire during use
-                if current_time < expiry_time - timedelta(minutes=5):
-                    return token_data['clientAccessToken']
-                else:
-                    return cls.refresh_token()
+                return token_data['clientAccessToken']
                     
         except FileNotFoundError:
-            raise Exception(f"Token file '{cls.TOKEN_FILE}' not found")
-        except KeyError as e:
-            raise Exception(f"Invalid token file structure: {str(e)}")
+            return cls.refresh_token()
 
     @classmethod
     def refresh_token(cls, retry_count: int = 0) -> str:
@@ -149,11 +137,11 @@ class TokenManager:
         }
         
         try:
+            # First attempt with existing token
             response = requests.post(cls.REFRESH_URL, headers=headers, json=data, timeout=10)
             response.raise_for_status()
             
             response_data = response.json()
-            print(f"Response from server: {response_data}")  # Debug log
             
             if not response_data.get('isSuccess', False):
                 error_desc = response_data.get('errorDescription', 'Unknown error')
@@ -164,7 +152,6 @@ class TokenManager:
                 'clientRefreshToken': response_data['clientRefreshToken'],
                 'refreshTokenExpiryTime': response_data['refreshTokenExpiryTime']
             }
-            print(f"Token data to save: {token_data}")  # Debug log
             
             # Save new token data
             with open(cls.TOKEN_FILE, 'w') as f:
@@ -182,6 +169,100 @@ class TokenManager:
 class AWQAFApi:
     """Handles interactions with the AWQAF Prayer Times API"""
     BASE_URL = "https://mobileappapi.awqaf.gov.ae/APIS/v2/prayer-time/prayertimes"
+    LOCATIONS_URL = "https://mobileappapi.awqaf.gov.ae/APIS/v2/prayer-time/EmiratesAndCities"
+    LOCATIONS_CACHE_FILE = "locations_cache.json"
+    
+    @classmethod
+    def get_locations(cls) -> Dict[str, Any]:
+        """
+        Get emirates and cities data from cache or API.
+        
+        Returns:
+            Dict containing emirates and cities data
+        """
+        try:
+            # Try to read from cache first
+            if os.path.exists(cls.LOCATIONS_CACHE_FILE):
+                with open(cls.LOCATIONS_CACHE_FILE, 'r') as f:
+                    return json.load(f)
+        except Exception:
+            pass  # If any error occurs reading cache, fetch from API
+            
+        # Prepare API request
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0',
+            'Accept': '*/*',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate, br, zstd',
+            'Authorization': f'Bearer {TokenManager.get_token()}',
+            'Origin': 'https://www.awqaf.gov.ae',
+            'DNT': '1',
+            'Connection': 'keep-alive',
+            'Referer': 'https://www.awqaf.gov.ae/',
+            'Sec-Fetch-Dest': 'empty',
+            'Sec-Fetch-Mode': 'cors',
+            'Sec-Fetch-Site': 'same-site',
+            'Sec-GPC': '1'
+        }
+        
+        params = {
+            'lang': 'ar',
+            'source': 'web'
+        }
+        
+        try:
+            # First attempt with existing token
+            response = requests.get(cls.LOCATIONS_URL, headers=headers, params=params)
+            
+            # If unauthorized, try once more with a fresh token
+            if response.status_code == 401:
+                headers['Authorization'] = f'Bearer {TokenManager.refresh_token()}'
+                response = requests.get(cls.LOCATIONS_URL, headers=headers, params=params)
+                
+            response.raise_for_status()
+            data = response.json()
+            
+            # Cache the results
+            with open(cls.LOCATIONS_CACHE_FILE, 'w') as f:
+                json.dump(data, f, indent=2)
+                
+            return data
+        except Exception as e:
+            print(f"Error fetching locations: {str(e)}")
+            return {"emirates": [], "cities": []}
+            
+    @classmethod
+    def get_emirates(cls) -> List[Dict[str, str]]:
+        """Get list of all emirates"""
+        return cls.get_locations().get("emirates", [])
+        
+    @classmethod
+    def get_cities_for_emirate(cls, emirate: str) -> List[Dict[str, Any]]:
+        """
+        Get list of cities for a specific emirate
+        
+        Args:
+            emirate: Name of the emirate (in English)
+            
+        Returns:
+            List of city dictionaries containing name, coordinates, etc.
+        """
+        # Find emirate ID
+        locations = cls.get_locations()
+        emirate_id = None
+        for e in locations.get("emirates", []):
+            if e.get("emirateNameEn", "").lower() == emirate.lower():
+                emirate_id = e.get("emiratesId")
+                break
+                
+        if emirate_id is None:
+            return []
+            
+        # Get cities for this emirate
+        return [
+            city for city in locations.get("cities", [])
+            if city.get("emirate") == emirate_id
+        ]
     
     @staticmethod
     def fetch_prayer_times(year: int, month: int, day: Optional[int], city: str) -> Dict[str, Any]:
@@ -208,24 +289,37 @@ class AWQAFApi:
         # Prepare API request
         url = f"{AWQAFApi.BASE_URL}/{start_date}/{end_date}"
         
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0',
-            'Accept': '*/*',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Accept-Encoding': 'gzip, deflate, br, zstd',
-            'Authorization': f'Bearer {TokenManager.get_token()}',
-            'Origin': 'https://www.awqaf.gov.ae',
-            'DNT': '1',
-            'Connection': 'keep-alive',
-            'Referer': 'https://www.awqaf.gov.ae/',
-            'Sec-Fetch-Dest': 'empty',
-            'Sec-Fetch-Mode': 'cors',
-            'Sec-Fetch-Site': 'same-site',
-            'Sec-GPC': '1'
-        }
+        def make_request(use_refresh_token=False):
+            if use_refresh_token:
+                token = TokenManager.refresh_token()
+            else:
+                token = TokenManager.get_token()
+                
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0',
+                'Accept': '*/*',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Accept-Encoding': 'gzip, deflate, br, zstd',
+                'Authorization': f'Bearer {token}',
+                'Origin': 'https://www.awqaf.gov.ae',
+                'DNT': '1',
+                'Connection': 'keep-alive',
+                'Referer': 'https://www.awqaf.gov.ae/',
+                'Sec-Fetch-Dest': 'empty',
+                'Sec-Fetch-Mode': 'cors',
+                'Sec-Fetch-Site': 'same-site',
+                'Sec-GPC': '1'
+            }
+            return requests.get(url, headers=headers)
         
         try:
-            response = requests.get(url, headers=headers)
+            # First attempt with existing token
+            response = make_request()
+            
+            # If unauthorized, try once more with a fresh token
+            if response.status_code == 401:
+                response = make_request(use_refresh_token=True)
+                
             response.raise_for_status()
             data = response.json()
             
@@ -287,7 +381,7 @@ class AWQAFApi:
             raise Exception(f"Failed to fetch prayer times: {str(e)}")
 
 class CalendarGenerator:
-    """Handles generation of ICS calendar files"""
+    """Handles generation of .ics calendar files"""
     def __init__(self, prayer_data: Dict[str, Any], city: str, emirate: str):
         self.prayer_data = prayer_data
         self.city = city
@@ -375,25 +469,28 @@ class CalendarGenerator:
         """Get output directory and filename for calendar file"""
         year = self.first_date.year
         month_name = self.first_date.strftime("%B")
-        base_dir = os.path.join(str(year), month_name, self.emirate, self.city)
+        if self.emirate == self.city:
+            base_dir = os.path.join(str(year), month_name, self.emirate)
+        else:
+            base_dir = os.path.join(str(year), month_name, self.emirate, self.city)
         
         if day:
             # Daily calendar
-            output_dir = os.path.join(base_dir, f"{day:02d}")
-            filename = f"Prayer-Times-On-{day:02d}{month_name}.ics"
+            output_dir = os.path.join(base_dir, "Daily")
+            filename = f"{day:02d}{month_name}.ics"
         else:
             # Monthly calendar
             output_dir = base_dir
             last_day = self.prayer_data["prayertimes"][-1]["date"]
             first_day_num = self.first_date.day
             last_day_num = datetime.strptime(last_day, "%Y-%m-%d").day
-            filename = f"Prayer-Times-From-{first_day_num:02d}-To-{last_day_num:02d}.ics"
+            filename = f"{month_name}{year}.ics"
         
         return output_dir, filename
     
     def generate(self, day: Optional[int] = None) -> str:
         """
-        Generate ICS calendar file
+        Generate .ics calendar file
         Args:
             day: Optional specific day to generate calendar for
         Returns:
@@ -454,7 +551,9 @@ Options:
     --year YEAR         Year (default: 2025)
     --month MONTH       Month number (1-12)
     --day DAY           Optional: Generate calendar for specific day only
-    --show-help         Show this help message
+    --list-emirates    List all emirates
+    --list-cities      List all cities for the specified emirate
+    --show-help        Show this help message
 
 Examples:
     # Generate monthly calendar for Dubai, January 2025
@@ -462,10 +561,16 @@ Examples:
 
     # Generate daily calendar for Dubai, January 15, 2025
     python prayer-times-ics-generator.py --city Dubai --emirate Dubai --year 2025 --month 1 --day 15
+    
+    # List all emirates
+    python prayer-times-ics-generator.py --list-emirates
+    
+    # List all cities in Dubai emirate
+    python prayer-times-ics-generator.py --emirate Dubai --list-cities
 
 Output:
-    Monthly calendar: {year}/{month}/{emirate}/{city}/Prayer-Times-From-{firstDay}-To-{lastDay}.ics
-    Daily calendar:   {year}/{month}/{emirate}/{city}/{day}/Prayer-Times-On-{day}{month}.ics
+    Monthly calendar: {year}/{month}/{emirate}/{city}/{month}{year}.ics
+    Daily calendar:   {year}/{month}/{emirate}/Daily/{day}{month}.ics
 
 Events:
     1. Adhan till Iqamah (Green)
@@ -494,12 +599,36 @@ def main():
     parser.add_argument('--year', type=int, default=2025, help='Year')
     parser.add_argument('--month', type=int, default=1, help='Month')
     parser.add_argument('--day', type=int, help='Optional: Specific day to generate calendar for')
+    parser.add_argument('--list-emirates', action='store_true', help='List all emirates')
+    parser.add_argument('--list-cities', action='store_true', help='List all cities for the specified emirate')
     parser.add_argument('--show-help', action='store_true', help='Show detailed help message')
     
     args = parser.parse_args()
     
     if args.show_help:
         print_help()
+        return
+        
+    if args.list_emirates:
+        emirates = AWQAFApi.get_emirates()
+        if emirates:
+            print("\nAvailable emirates:")
+            for emirate in emirates:
+                print(f"  - {emirate['emirateNameEn']}")
+        else:
+            print("\nNo emirates found or an error occurred.")
+        return
+        
+    if args.list_cities:
+        cities = AWQAFApi.get_cities_for_emirate(args.emirate)
+        if cities:
+            print(f"\nCities in {args.emirate} emirate:")
+            for city in cities:
+                print(f"  - {city['cityNameEn']}")
+                if 'latitude' in city and 'longitude' in city:
+                    print(f"    Location: {city['latitude']}, {city['longitude']}")
+        else:
+            print(f"\nNo cities found for {args.emirate} emirate or an error occurred.")
         return
     
     try:
