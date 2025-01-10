@@ -24,7 +24,7 @@ cd prayer-times-ics-generator
 pip install -r requirements.txt
 ```
 
-3. Create a `config.json` file in the project root with your AWQAF API credentials:
+3. Rename `config-example.json` to `config.json` and follow the instructions in the `Setup` section to set up UAE AWQAF API credentials:
 ```json
 {
     "clientGuid": "your_client_guid",
@@ -32,12 +32,14 @@ pip install -r requirements.txt
 }
 ```
 
-4. Create a `auth_token.json` file in the project root to store the authentication token:
+4. Rename `auth_token-example.json` to `auth_token.json` in the project root for the program to store the authentication token:
+```json
 {
     "clientAccessToken": "your_Access_Token",
     "clientRefreshToken": "your_Refresh_Token",
-    "refreshTokenExpiryTime": 0000000000
+    "refreshTokenExpiryTime": null
 }
+```
 
 **Important**: Keep your `config.json` and `auth_token.json` files secure and never commit it to version control.
 
@@ -51,20 +53,23 @@ Follow the steps below to locate your clientGUID and clientSecret and start usin
 5. Refresh the page
 6. Filter by JSON or XHR, depending on your browser
 7. Locate 'mobileappapi.awqaf.gov.ae' within the 'Domain' column
-8. Find the JSON file with the today's date
-9. Click on the JSON file
-10. Under 'Request Headers', locate 'Authorization' and note down the last 6 characters
-11. Search through each 'ClientAuthorization' -> 'Response' tab to find the clientAccessToken with the same last 6 characters you noted down
-12. Upon finding the correct 'ClientAuthorization' JSON file, copy the 'clientGUID' and 'clientSecret' values under the 'Request' tab, and paste them into the 'config.json' file
-13. Save the 'config.json' file
+8. Find the JSON file with today's date and click on it
+9. Under 'Request Headers', locate 'Authorization' and note down the last 6 characters
+10. Search through 'Reponse' of every JSON file called 'ClientAuthorization' to find the clientAccessToken with the same last 6 characters you noted down
+11. Upon finding the matching 'ClientAuthorization' JSON file, copy the 'clientGUID' and 'clientSecret' values located within the 'Request' tab, and paste them into the 'config.json' file
+12. Save the 'config.json' file
 
-After completing the steps above head to the usage section below to start using the script.
+Video tutorial:
+
+> **Work in progress**
+
+After completing the setup, navigate to the 'Usage' section below to begin using the script.
 
 ## Usage
 
 Run the script with the following command:
 ```bash
-python prayer_times_calendar.py --year 2025 --month 1 --city "Abu Dhabi" --emirate "Abu Dhabi"
+python prayer-times-ics-generator.py --year 2025 --month 1 --city "Abu Dhabi" --emirate "Abu Dhabi"
 ```
 
 ### Command Line Arguments

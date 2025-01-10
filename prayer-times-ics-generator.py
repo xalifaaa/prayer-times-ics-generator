@@ -38,7 +38,7 @@ class TokenManager:
     """Manages the authentication token for AWQAF API"""
     TOKEN_FILE = "auth_token.json"
     CONFIG_FILE = "config.json"
-    TOKEN_URL = "https://www.awqaf.gov.ae/prayer-times?lang=en"
+    TOKEN_URL = "https://mobileappapi.awqaf.gov.ae/APIS/v2/sso/ClientAuthorization?lang=ar"
     REFRESH_URL = "https://mobileappapi.awqaf.gov.ae/APIS/v2/sso/ClientAuthorization?lang=ar"
     MAX_RETRIES = 3
     RETRY_DELAY = 1  # seconds
@@ -69,8 +69,8 @@ class TokenManager:
                 f"Configuration file '{cls.CONFIG_FILE}' not found. "
                 "Please create it with your client credentials."
             )
-        except json.JSONDecodeError:
-            raise Exception(f"Invalid JSON format in {cls.CONFIG_FILE}")
+        except json.JSONDecodeError as e:
+            raise Exception(f"Invalid JSON format in {cls.CONFIG_FILE}: {str(e)}")
         except KeyError as e:
             raise Exception(f"Invalid config file structure: {str(e)}")
     
@@ -87,14 +87,25 @@ class TokenManager:
         """
         try:
             with open(cls.TOKEN_FILE, 'r') as f:
-                token_data = json.load(f)
+                try:
+                    token_data = json.load(f)
+                    print(f"Read token data: {token_data}")  # Debug log
+                except json.JSONDecodeError as e:
+                    print(f"JSON decode error: {str(e)}")  # Debug log
+                    raise
                 
                 # Validate token data structure
                 required_fields = {'clientAccessToken', 'clientRefreshToken', 'refreshTokenExpiryTime'}
                 if not all(field in token_data for field in required_fields):
                     raise KeyError("Missing required fields in token data")
                 
-                current_time = datetime.fromisoformat("2025-01-10T00:47:04+04:00")
+                # If we have no expiry time or empty tokens, refresh
+                if (token_data['refreshTokenExpiryTime'] is None or 
+                    not token_data['clientAccessToken'] or 
+                    not token_data['clientRefreshToken']):
+                    return cls.refresh_token()
+                
+                current_time = datetime.now(cls.TIMEZONE)
                 # Convert Unix timestamp to timezone-aware datetime
                 expiry_time = datetime.fromtimestamp(token_data['refreshTokenExpiryTime'], cls.TIMEZONE)
                 
@@ -106,8 +117,6 @@ class TokenManager:
                     
         except FileNotFoundError:
             raise Exception(f"Token file '{cls.TOKEN_FILE}' not found")
-        except json.JSONDecodeError:
-            raise Exception(f"Invalid JSON format in {cls.TOKEN_FILE}")
         except KeyError as e:
             raise Exception(f"Invalid token file structure: {str(e)}")
 
@@ -143,9 +152,19 @@ class TokenManager:
             response = requests.post(cls.REFRESH_URL, headers=headers, json=data, timeout=10)
             response.raise_for_status()
             
-            token_data = response.json()
-            if not all(key in token_data for key in ['clientAccessToken', 'clientRefreshToken', 'refreshTokenExpiryTime']):
-                raise ValueError("Invalid response format from authorization endpoint")
+            response_data = response.json()
+            print(f"Response from server: {response_data}")  # Debug log
+            
+            if not response_data.get('isSuccess', False):
+                error_desc = response_data.get('errorDescription', 'Unknown error')
+                raise ValueError(f"Authorization failed: {error_desc}")
+            
+            token_data = {
+                'clientAccessToken': response_data['clientAccessToken'],
+                'clientRefreshToken': response_data['clientRefreshToken'],
+                'refreshTokenExpiryTime': response_data['refreshTokenExpiryTime']
+            }
+            print(f"Token data to save: {token_data}")  # Debug log
             
             # Save new token data
             with open(cls.TOKEN_FILE, 'w') as f:
@@ -427,7 +446,7 @@ def print_help():
 Prayer Times Calendar Generator
 
 Usage:
-    python prayer_times_calendar.py [options]
+    python prayer-times-ics-generator.py [options]
 
 Options:
     --city CITY         City name (default: Dubai)
@@ -439,10 +458,10 @@ Options:
 
 Examples:
     # Generate monthly calendar for Dubai, January 2025
-    python prayer_times_calendar.py --city Dubai --emirate Dubai --year 2025 --month 1
+    python prayer-times-ics-generator.py --city Dubai --emirate Dubai --year 2025 --month 1
 
     # Generate daily calendar for Dubai, January 15, 2025
-    python prayer_times_calendar.py --city Dubai --emirate Dubai --year 2025 --month 1 --day 15
+    python prayer-times-ics-generator.py --city Dubai --emirate Dubai --year 2025 --month 1 --day 15
 
 Output:
     Monthly calendar: {year}/{month}/{emirate}/{city}/Prayer-Times-From-{firstDay}-To-{lastDay}.ics
@@ -493,8 +512,21 @@ def main():
         
         print(f"\nSuccessfully generated prayer time calendar file!")
         print(f"File is located at: {filepath}")
+    except json.JSONDecodeError as e:
+        print(f"JSON parsing error: {str(e)}")
+        print(f"File path: {e.doc}")
+        print(f"Line number: {e.lineno}")
+        print(f"Column: {e.colno}")
+        print(f"Position: {e.pos}")
+    except requests.exceptions.RequestException as e:
+        print(f"API request error: {str(e)}")
+        if hasattr(e, 'response') and e.response is not None:
+            print(f"Response status code: {e.response.status_code}")
+            print(f"Response content: {e.response.text}")
     except Exception as e:
         print(f"Error generating calendar: {str(e)}")
+        import traceback
+        print(f"Full error: {traceback.format_exc()}")
 
 if __name__ == "__main__":
     main()
