@@ -1,8 +1,8 @@
 # UAE Prayer Times Calendar Events Generator
 
-A Python application that generates a **single `.ics` file** on a day or month basis with prayer times **fetched from the official UAE AWQAF Prayer Time and Locations API.** This single-setup, hassle-free solution allows Muslims in the UAE to **seamlessly import all adhan-to-iqamah and prayer time events** into their calendars with just **one `.ics` file.
+A Python application that generates a **single `.ics` file** on a day or month basis with prayer times **fetched from the official UAE AWQAF Prayer Time and Locations API.** This single-setup, hassle-free solution allows Muslims in the UAE to **seamlessly import all adhan-to-iqamah and prayer time events** into their calendars with just **one** `.ics` file.
 
-** The `.ics` file is compatible with popular calendar platforms such as **Google Calendar, Apple Calendar, Microsoft Outlook, and more**, ensuring easy integration without the need to import multiple files.
+The `.ics` file is compatible with popular calendar platforms such as **Google Calendar, Apple Calendar, Microsoft Outlook, and more**, ensuring easy integration without the need to import multiple files.
 
 ![Proton Calendar Example](https://i.imgur.com/2kYTCyC.png)
 
