@@ -28,6 +28,7 @@ jobs:
         pip install ruff
         pip install -r requirements.txt
         python -m playwright install chromium --with-deps
+        python -m playwright install chromium --with-deps
     
     - name: Run Ruff linting
       run: ruff check src/ main.py
@@ -54,12 +55,16 @@ jobs:
 
         async def test():
             print('Testing credential extraction...')
-            creds = await prayer_module.extract_credentials()
-            if creds:
-                print('SUCCESS: Credentials extracted')
-                return True
-            else:
-                print('FAIL: No credentials extracted')
+            try:
+                creds = await prayer_module.extract_credentials()
+                if creds:
+                    print('SUCCESS: Credentials extracted')
+                    return True
+                else:
+                    print('FAIL: No credentials extracted')
+                    return False
+            except Exception as e:
+                print(f'ERROR: {e}')
                 return False
 
         result = asyncio.run(test())
