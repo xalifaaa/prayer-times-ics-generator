@@ -471,6 +471,16 @@ class AWQAFApi:
     @classmethod
     def _fetch_locations_playwright(cls) -> dict[str, Any]:
         """Fetch locations using Playwright with saved browser context."""
+        # Read config file before async function
+        auth_token = None
+        try:
+            with open(CONFIG_FILE) as f:
+                config = json.load(f)
+            if 'clientAccessToken' in config:
+                auth_token = config['clientAccessToken']
+        except (OSError, json.JSONDecodeError):
+            pass
+        
         async def _fetch():
             async with async_playwright() as p:
                 browser = await p.chromium.launch(headless=True)
@@ -478,15 +488,10 @@ class AWQAFApi:
                 page = await context.new_page()
                 
                 # Set authorization header from saved tokens
-                try:
-                    with open(CONFIG_FILE) as f:
-                        config = json.load(f)
-                    if 'clientAccessToken' in config:
-                        await page.set_extra_http_headers({
-                            'Authorization': f'Bearer {config["clientAccessToken"]}'
-                        })
-                except (OSError, json.JSONDecodeError):
-                    pass
+                if auth_token:
+                    await page.set_extra_http_headers({
+                        'Authorization': f'Bearer {auth_token}'
+                    })
                 
                 url = f"{cls.LOCATIONS_URL}?lang=ar"
                 response = await page.goto(url)
@@ -519,6 +524,16 @@ class AWQAFApi:
         
         url = f"{cls.BASE_URL}/{start_date}/{end_date}?lang=ar"
         
+        # Read config file before async function
+        auth_token = None
+        try:
+            with open(CONFIG_FILE) as f:
+                config = json.load(f)
+            if 'clientAccessToken' in config:
+                auth_token = config['clientAccessToken']
+        except (OSError, json.JSONDecodeError):
+            pass
+        
         async def _fetch():
             async with async_playwright() as p:
                 browser = await p.chromium.launch(headless=True)
@@ -526,15 +541,10 @@ class AWQAFApi:
                 page = await context.new_page()
                 
                 # Set authorization header from saved tokens
-                try:
-                    with open(CONFIG_FILE) as f:
-                        config = json.load(f)
-                    if 'clientAccessToken' in config:
-                        await page.set_extra_http_headers({
-                            'Authorization': f'Bearer {config["clientAccessToken"]}'
-                        })
-                except (OSError, json.JSONDecodeError):
-                    pass
+                if auth_token:
+                    await page.set_extra_http_headers({
+                        'Authorization': f'Bearer {auth_token}'
+                    })
                 
                 response = await page.goto(url)
                 if response.status != 200:
