@@ -186,11 +186,15 @@ The script generates .ics files in the following format:
 
 This project uses GitHub Actions to ensure the application remains functional and secure:
 
-- **CI Pipeline**: Runs on every push and pull request to check code quality and syntax
-- **Daily Functionality Tests**: Automatically tests core functionality to ensure the app is working
-- **Weekly Dependency Checks**: Scans for security vulnerabilities and outdated packages
+- **Working Pipeline**: Runs on every push, pull request, and daily at 6:00 AM UTC
+- **What it tests:**
+  - Code quality with Ruff linting
+  - Python syntax validation
+  - CLI help command functionality
+  - Security vulnerabilities in dependencies
+- **Frequency:** Automatic on every change, plus daily security scans
 
-View the status of automated tests in the CI badge at the top of this README or in the [Actions tab](https://github.com/xalifaaa/prayer-times-ics-generator/actions).
+View the status of automated tests in the "Working Status" badge at the top of this README or in the [Actions tab](https://github.com/xalifaaa/prayer-times-ics-generator/actions).
 
 ## Contributing
 
