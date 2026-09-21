@@ -47,7 +47,7 @@ Perfect for professionals who want their spiritual obligations integrated seamle
 
 ### Web Interface
 
-Visit the web app to generate your calendar directly in your browser — works on mobile too.
+Visit the web app to generate your calendar directly in your browser — works on iOS, Android, MacOS, Windows, Linux, and more!
 
 **Coming soon:** [https://prayer-times-uae.example.com](https://prayer-times-uae.example.com) *(To Be Hosted Soon..)*
 
