@@ -2,33 +2,29 @@
 
 ![Working Status](https://github.com/xalifaaa/prayer-times-ics-generator/actions/workflows/working.yml/badge.svg)
 
-**Easily import accurate UAE prayer times into any modern calendar.** This tool generates a ready-made `.ics` calendar file with all five daily prayers + Jummah that works with Google Calendar, Apple Calendar, Outlook, and more. Just import once and get accurate prayer time events for your emirate and city.
+**Coming soon:** [https://prayer-times-uae.example.com](https://prayer-times-uae.example.com) *(To Be Hosted Soon..)*
+
+**Easily import accurate UAE prayer times into any modern calendar as events with preset reminders.** This tool generates a ready-made `.ics` calendar file with all five daily prayers + Jummah. 
+
+Works with Google Calendar, Microsoft Teams, Outlook Calendar, Apple Calendar, Proton Calendar, and more. 
+
+Setup once, generate, and import once to get accurate prayer time events for your emirate and city in less than 30 seconds.
 
 ![Proton Calendar Example](https://i.imgur.com/2kYTCyC.png)
 
-## What You Get
+**All 5 Daily Prayers** | **Jummah Prayer** | **Adhan Reminders** | **One-Time Import** | **Mobile-Friendly** | **All 7 UAE Emirates, 60+ Cities** | **Official UAE AWQAF Data**
 
-- **All 5 Daily Prayers**
-- **Jummah Prayer**
-- **Adhan Reminders**
-- **One-Time Import**
-- **Mobile-Friendly**
-- **7 Emirates, 60+ Cities**
-- **Official UAE AWQAF Data**
-
-## How It Works
-
-**1. Set up once** — Run setup or use the web interface (30 seconds)
-**2. Choose your location** — Select your emirate and city
-**3. Generate .ics file** — One click for any month
-**4. Import to calendar** — Google, Apple, Outlook — whatever you use
-**5. Done** — Your calendar now has all prayer times automatically
+1. **Set up once:** Quick setup in 20 seconds
+2. **Choose your location:** Select your emirate and city through the interactive GUI or command line
+3. **Generate .ics file:** One tap or click for any month or day
+4. **Import to any calendar:** Google Calendar, Microsoft Teams, Outlook, Apple Calendar, Proton Calendar
+5. **Done:** Now your calendar has all 5 daily prayers automatically as calendar events
 
 ## Quick Start
 
 ### Web Interface
 
-Visit the web app to generate your calendar directly in your browser — works on iOS, Android, MacOS, Windows, Linux, and more!
+Visit the web app to generate your calendar directly in your browser - works on iOS, Android, MacOS, Windows, Linux, and more!
 
 **Coming soon:** [https://prayer-times-uae.example.com](https://prayer-times-uae.example.com) *(To Be Hosted Soon..)*
 
@@ -144,11 +140,11 @@ JUMMAH_DURATION = 45
 - **Coverage:** 7 emirates, 60+ cities across UAE
 - **Format:** Standard .ics calendar file
 - **Compatibility:** Google Calendar, Apple Calendar, Outlook, and more
-- **Timezone:** Asia/Dubai (UAE Standard Time)
+- **Timezone:** GST (Gulf Standard Time)
 
 ## Security
 
-Your credentials are stored locally in `config.json` and `browser_context.json`. These files are automatically excluded from version control (see `.gitignore`). Never share these files — they contain your API tokens.
+Your credentials are stored locally in `config.json` and `browser_context.json`. These files are automatically excluded from version control (see `.gitignore`). Never share these files - they contain your API tokens.
 
 ## Reliability
 
