@@ -1003,12 +1003,21 @@ def guided_setup():
     print("UAE Prayer Times Calendar Generator - Guided Setup")
     print("="*60 + "\n")
     
+    # Check if running in non-interactive mode (Docker container)
+    import sys
+    is_interactive = sys.stdin.isatty()
+    auto_mode = os.environ.get('AUTO_SETUP', '').lower() == 'true'
+    
     # Check if config exists
     if os.path.exists(CONFIG_FILE):
         print(f"Configuration file '{CONFIG_FILE}' already exists.")
-        choice = input("Do you want to reconfigure? (y/n): ").strip().lower()
-        if choice != 'y':
-            print("Setup cancelled. Using existing configuration.")
+        if is_interactive:
+            choice = input("Do you want to reconfigure? (y/n): ").strip().lower()
+            if choice != 'y':
+                print("Setup cancelled. Using existing configuration.")
+                return
+        else:
+            print("Non-interactive mode detected. Using existing configuration.")
             return
     
     print("Step 1: API Credentials Setup")
@@ -1016,7 +1025,12 @@ def guided_setup():
     print("The generator needs credentials to access the AWQAF API.")
     print("We can automatically extract these from the AWQAF website.\n")
     
-    auto_extract = input("Would you like to automatically extract credentials? (y/n): ").strip().lower()
+    # In non-interactive or auto mode, automatically extract without prompting
+    if not is_interactive or auto_mode:
+        print("Non-interactive mode detected. Automatically extracting credentials...")
+        auto_extract = 'y'
+    else:
+        auto_extract = input("Would you like to automatically extract credentials? (y/n): ").strip().lower()
     
     if auto_extract == 'y':
         print("\nStarting automatic credential extraction...")
@@ -1038,60 +1052,13 @@ def guided_setup():
         print("Then run this script again with the --setup flag to continue.")
         return
     
-    print("\nStep 2: Location Selection")
-    print("-" * 40)
-    
-    # Fetch available emirates
-    print("Fetching available emirates...")
-    try:
-        emirates = AWQAFApi.get_emirates()
-        if not emirates:
-            print("Error: Could not fetch emirates. Please check your credentials.")
-            return
-        
-        print("\nAvailable emirates:")
-        for i, emirate in enumerate(emirates, 1):
-            print(f"  {i}. {emirate['emirateNameEn']}")
-        
-        emirate_choice = input(f"\nSelect an emirate (1-{len(emirates)}): ").strip()
-        try:
-            emirate_index = int(emirate_choice) - 1
-            if 0 <= emirate_index < len(emirates):
-                selected_emirate = emirates[emirate_index]
-                emirate_name = selected_emirate['emirateNameEn']
-                print(f"Selected: {emirate_name}")
-            else:
-                print("Invalid selection. Defaulting to Dubai.")
-                emirate_name = "Dubai"
-        except ValueError:
-            print("Invalid input. Defaulting to Dubai.")
-            emirate_name = "Dubai"
-        
-        # Fetch cities for selected emirate
-        print(f"\nFetching cities in {emirate_name}...")
-        cities = AWQAFApi.get_cities_for_emirate(emirate_name)
-        
-        if not cities:
-            print("Error: Could not fetch cities. Please check your credentials.")
-            return
-        
-        print(f"\nCities in {emirate_name}:")
-        for i, city in enumerate(cities, 1):
-            print(f"  {i}. {city['cityNameEn']}")
-        
-        city_choice = input(f"\nSelect a city (1-{len(cities)}): ").strip()
-        try:
-            city_index = int(city_choice) - 1
-            if 0 <= city_index < len(cities):
-                selected_city = cities[city_index]
-                city_name = selected_city['cityNameEn']
-                print(f"Selected: {city_name}")
-            else:
-                print("Invalid selection. Defaulting to Dubai.")
-                city_name = "Dubai"
-        except ValueError:
-            print("Invalid input. Defaulting to Dubai.")
-            city_name = "Dubai"
+    # Skip location selection in non-interactive mode (use environment variables or defaults)
+    if not is_interactive or auto_mode:
+        print("\nNon-interactive mode detected. Using environment variables or defaults.")
+        emirate_name = os.environ.get('DEFAULT_EMIRATE', 'Dubai')
+        city_name = os.environ.get('DEFAULT_CITY', 'Dubai')
+        print(f"Using emirate: {emirate_name}")
+        print(f"Using city: {city_name}")
         
         # Save preferences
         preferences = {
@@ -1109,25 +1076,101 @@ def guided_setup():
         with open(CONFIG_FILE, "w") as f:
             json.dump(config, f, indent=2)
         
-        print("\nStep 3: Default Settings")
+        print("\nSetup complete!")
+        return
+    
+    else:
+        # Interactive mode - fetch available emirates
+        print("\nStep 2: Location Selection")
         print("-" * 40)
-        print(f"Default emirate: {emirate_name}")
-        print(f"Default city: {city_name}")
-        print("Default time period: Current month and year")
         
-        print("\n" + "="*60)
-        print("Setup Complete!")
-        print("="*60)
-        print("\nYou can now generate prayer times calendars using:")
-        print("  python prayer-times-ics-generator.py")
-        print("\nOr specify different options:")
-        print("  python prayer-times-ics-generator.py --city \"Abu Dhabi\" --emirate \"Abu Dhabi\"")
-        print("  python prayer-times-ics-generator.py --year 2026 --month 10")
-        
-    except (OSError, ValueError, RuntimeError, APIError) as e:
-        print(f"\nError during setup: {e}")
-        import traceback
-        traceback.print_exc()
+        # Fetch available emirates
+        print("Fetching available emirates...")
+        try:
+            emirates = AWQAFApi.get_emirates()
+            if not emirates:
+                print("Error: Could not fetch emirates. Please check your credentials.")
+                return
+            
+            print("\nAvailable emirates:")
+            for i, emirate in enumerate(emirates, 1):
+                print(f"  {i}. {emirate['emirateNameEn']}")
+            
+            emirate_choice = input(f"\nSelect an emirate (1-{len(emirates)}): ").strip()
+            try:
+                emirate_index = int(emirate_choice) - 1
+                if 0 <= emirate_index < len(emirates):
+                    selected_emirate = emirates[emirate_index]
+                    emirate_name = selected_emirate['emirateNameEn']
+                    print(f"Selected: {emirate_name}")
+                else:
+                    print("Invalid selection. Defaulting to Dubai.")
+                    emirate_name = "Dubai"
+            except ValueError:
+                print("Invalid input. Defaulting to Dubai.")
+                emirate_name = "Dubai"
+            
+            # Fetch cities for selected emirate
+            print(f"\nFetching cities in {emirate_name}...")
+            cities = AWQAFApi.get_cities_for_emirate(emirate_name)
+            
+            if not cities:
+                print("Error: Could not fetch cities. Please check your credentials.")
+                return
+            
+            print(f"\nCities in {emirate_name}:")
+            for i, city in enumerate(cities, 1):
+                print(f"  {i}. {city['cityNameEn']}")
+            
+            city_choice = input(f"\nSelect a city (1-{len(cities)}): ").strip()
+            try:
+                city_index = int(city_choice) - 1
+                if 0 <= city_index < len(cities):
+                    selected_city = cities[city_index]
+                    city_name = selected_city['cityNameEn']
+                    print(f"Selected: {city_name}")
+                else:
+                    print("Invalid selection. Defaulting to Dubai.")
+                    city_name = "Dubai"
+            except ValueError:
+                print("Invalid input. Defaulting to Dubai.")
+                city_name = "Dubai"
+            
+            # Save preferences
+            preferences = {
+                "default_emirate": emirate_name,
+                "default_city": city_name
+            }
+            
+            try:
+                with open(CONFIG_FILE) as f:
+                    config = json.load(f)
+                config.update(preferences)
+            except (OSError, json.JSONDecodeError):
+                config = preferences
+            
+            with open(CONFIG_FILE, "w") as f:
+                json.dump(config, f, indent=2)
+            
+            print("\nStep 3: Default Settings")
+            print("-" * 40)
+            print(f"Default emirate: {emirate_name}")
+            print(f"Default city: {city_name}")
+            print("Default time period: Current month and year")
+            
+            print("\n" + "="*60)
+            print("Setup Complete!")
+            print("="*60)
+            print("\nYou can now generate prayer times calendars using:")
+            print("  python prayer-times-ics-generator.py")
+            print("\nOr specify different options:")
+            print("  python prayer-times-ics-generator.py --city \"Abu Dhabi\" --emirate \"Abu Dhabi\"")
+            print("  python prayer-times-ics-generator.py --year 2026 --month 10")
+            
+        except (OSError, ValueError, RuntimeError, APIError) as e:
+            print(f"\nError during setup: {e}")
+            import traceback
+            traceback.print_exc()
 
 
 def main():

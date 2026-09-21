@@ -14,10 +14,14 @@ from pathlib import Path
 import pytz
 from flask import Flask, redirect, render_template, request, send_file, url_for
 
-# Set template folder to parent directory
-import os
-template_folder = os.path.join(os.path.dirname(__file__), '..', 'templates')
+# Set template folder to absolute path
+# Get the root directory (parent of src/)
+root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+template_folder = os.path.join(root_dir, 'templates')
+# Make it absolute
+template_folder = os.path.abspath(template_folder)
 app = Flask(__name__, template_folder=template_folder)
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
 # Load the main script as a module
 script_path = Path(__file__).parent / 'generator.py'
@@ -30,9 +34,6 @@ spec.loader.exec_module(prayer_module)
 AWQAFApi = prayer_module.AWQAFApi
 CalendarGenerator = prayer_module.CalendarGenerator
 PrayerConfig = prayer_module.PrayerConfig
-
-app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
 
 @app.route('/')
@@ -104,8 +105,11 @@ def generate():
 @app.route('/download/<path:filename>')
 def download(filename):
     """Download the generated ICS file"""
+    # Get the root directory (where app.py is)
+    root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    
     # Find the file in the generated directories
-    for root, dirs, files in os.walk('.'):
+    for root, dirs, files in os.walk(root_dir):
         if filename in files:
             filepath = os.path.join(root, filename)
             return send_file(filepath, as_attachment=True, download_name=filename)
@@ -143,8 +147,8 @@ def cities(emirate):
 
 
 if __name__ == '__main__':
-    # Use environment variable for port, default to 5000
-    port = int(os.environ.get('PORT', '5000'))
-    # Disable debug mode in production
+    # For development only
+    import os
+    port = int(os.environ.get('PORT', '8080'))
     debug = os.environ.get('DEBUG', 'False').lower() == 'true'
     app.run(host='0.0.0.0', port=port, debug=debug)

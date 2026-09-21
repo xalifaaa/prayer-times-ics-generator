@@ -10,6 +10,8 @@ __pycache__/
 *.so
 .Python
 env/
+.venv/
+venv/
 build/
 develop-eggs/
 dist/
@@ -41,3 +43,10 @@ wheels/
 2024/
 2025/
 2026/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-compose.override.yml
