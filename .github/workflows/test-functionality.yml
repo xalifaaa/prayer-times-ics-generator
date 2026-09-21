@@ -22,11 +22,21 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
+        python -m playwright install chromium --with-deps
     
-    - name: Test basic functionality
+    - name: Test help and emirate listing
       run: |
         python prayer-times-ics-generator.py --help
         python prayer-times-ics-generator.py --list-emirates
+    
+    - name: Test credential extraction function
+      run: python test_extraction.py
+    
+    - name: Test ICS generation with extracted credentials
+      if: success()
+      run: |
+        python prayer-times-ics-generator.py --year 2025 --month 1 --city "Dubai" --emirate "Dubai"
+        ls -la 2025/January/Dubai/
     
     - name: Run lint check
       run: ruff check prayer-times-ics-generator.py
