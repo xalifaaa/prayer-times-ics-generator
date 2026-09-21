@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 UAE Prayer Times Calendar Events Generator
 Generates .ics calendar files for prayer times using the official UAE AWQAF Prayer Times and Locations API.
