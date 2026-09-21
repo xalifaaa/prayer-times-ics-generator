@@ -85,10 +85,11 @@ jobs:
         run: |
           AI_CONN=$(az monitor app-insights component show --app "${{ env.APP_NAME }}-insights" --resource-group "${{ env.RESOURCE_GROUP }}" --query connectionString -o tsv)
           AI_APPID=$(az monitor app-insights component show --app "${{ env.APP_NAME }}-insights" --resource-group "${{ env.RESOURCE_GROUP }}" --query appId -o tsv)
-          AI_KEY=$(az monitor app-insights api-key show --app "${{ env.APP_NAME }}-insights" --resource-group "${{ env.RESOURCE_GROUP }}" --api-key site-reader --query apiKey -o tsv 2>/dev/null || true)
-          if [ -z "$AI_KEY" ]; then
-            AI_KEY=$(az monitor app-insights api-key create --app "${{ env.APP_NAME }}-insights" --resource-group "${{ env.RESOURCE_GROUP }}" --api-key site-reader --read-properties ReadTelemetry --query apiKey -o tsv)
+          # API key secrets are only returned on create; recreate the key each deploy
+          if az monitor app-insights api-key show --app "${{ env.APP_NAME }}-insights" --resource-group "${{ env.RESOURCE_GROUP }}" --query "[?name=='site-reader'].name | [0]" -o tsv | grep -q site-reader; then
+            az monitor app-insights api-key delete --app "${{ env.APP_NAME }}-insights" --resource-group "${{ env.RESOURCE_GROUP }}" --api-key site-reader --yes
           fi
+          AI_KEY=$(az monitor app-insights api-key create --app "${{ env.APP_NAME }}-insights" --resource-group "${{ env.RESOURCE_GROUP }}" --api-key site-reader --read-properties ReadTelemetry --query apiKey -o tsv)
           echo "::add-mask::$AI_CONN"
           echo "::add-mask::$AI_KEY"
           az webapp config appsettings set \

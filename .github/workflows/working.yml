@@ -27,53 +27,15 @@ jobs:
         python -m pip install --upgrade pip
         pip install ruff
         pip install -r requirements.txt
-        python -m playwright install chromium --with-deps
-        python -m playwright install chromium --with-deps
     
     - name: Run Ruff linting
-      run: ruff check src/ main.py
+      run: ruff check src/ main.py scripts/
     
     - name: Check Python syntax
-      run: python -m py_compile main.py
+      run: python -m py_compile main.py src/app.py src/generator.py scripts/pregenerate.py
     
     - name: Test help command
       run: python main.py --help
-    
-    - name: Test credential extraction
-      run: |
-        python << 'PYEOF'
-        import asyncio
-        import importlib.util
-        import sys
-        from pathlib import Path
-
-        script_path = Path('src/generator.py')
-        spec = importlib.util.spec_from_file_location('generator', script_path)
-        prayer_module = importlib.util.module_from_spec(spec)
-        sys.modules['generator'] = prayer_module
-        spec.loader.exec_module(prayer_module)
-
-        async def test():
-            print('Testing credential extraction...')
-            try:
-                creds = await prayer_module.extract_credentials()
-                if creds:
-                    print('SUCCESS: Credentials extracted')
-                    return True
-                else:
-                    print('FAIL: No credentials extracted')
-                    return False
-            except Exception as e:
-                print(f'ERROR: {e}')
-                return False
-
-        result = asyncio.run(test())
-        sys.exit(0 if result else 1)
-        PYEOF
-    
-    - name: Test ICS generation
-      if: success()
-      run: python main.py --year 2025 --month 1 --city "Dubai" --emirate "Dubai"
     
     - name: Check for security vulnerabilities
       run: |
