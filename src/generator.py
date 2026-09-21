@@ -451,7 +451,11 @@ class AWQAFApi:
         # Try using Playwright if browser context is available
         if os.path.exists(cls.CONTEXT_FILE):
             try:
-                return cls._fetch_locations_playwright()
+                data = cls._fetch_locations_playwright()
+                if data.get("emirates"):
+                    with open(cls.LOCATIONS_CACHE_FILE, 'w') as f:
+                        json.dump(data, f, indent=2)
+                return data
             except (OSError, ValueError, RuntimeError):
                 pass  # Fall back to regular API
             
@@ -479,12 +483,12 @@ class AWQAFApi:
         
         try:
             # First attempt with existing token
-            response = requests.get(cls.LOCATIONS_URL, headers=headers, params=params)
+            response = requests.get(cls.LOCATIONS_URL, headers=headers, params=params, timeout=30)
             
             # If unauthorized, try once more with a fresh token
             if response.status_code == 401:
                 headers['Authorization'] = f'Bearer {TokenManager.refresh_token()}'
-                response = requests.get(cls.LOCATIONS_URL, headers=headers, params=params)
+                response = requests.get(cls.LOCATIONS_URL, headers=headers, params=params, timeout=30)
                 
             response.raise_for_status()
             data = response.json()
