@@ -21,7 +21,5 @@ venv/
 README.md
 LICENSE
 *.md
-deploy-to-azure.sh
-deploy-to-azure.ps1
 .dockerignore
 docker-compose.yml
