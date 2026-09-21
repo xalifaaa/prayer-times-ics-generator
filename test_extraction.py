@@ -1,9 +1,21 @@
 import asyncio
+import importlib.util
 import json
 import os
 import sys
+from pathlib import Path
 
-from prayer_times_ics_generator import CONFIG_FILE, CONTEXT_FILE, extract_credentials
+# Load the main script as a module
+script_path = Path(__file__).parent / "prayer-times-ics-generator.py"
+spec = importlib.util.spec_from_file_location("prayer_times_ics_generator", script_path)
+prayer_module = importlib.util.module_from_spec(spec)
+sys.modules["prayer_times_ics_generator"] = prayer_module
+spec.loader.exec_module(prayer_module)
+
+# Get the needed items from the module
+CONFIG_FILE = "config.json"
+CONTEXT_FILE = "browser_context.json"
+extract_credentials = prayer_module.extract_credentials
 
 
 async def test_extraction():
