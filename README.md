@@ -1,39 +1,20 @@
-# UAE Prayer Times Calendar
+# UAE Prayer (Salah) Times Calendar Event Generator
 
 ![Working Status](https://github.com/xalifaaa/prayer-times-ics-generator/actions/workflows/working.yml/badge.svg)
 
-**Never miss a prayer again.** Automatically import accurate UAE prayer times directly into your calendar — Google Calendar, Apple Calendar, Outlook, and more.
-
-As a busy professional in the UAE, managing prayer times shouldn't add complexity to your day. This tool generates a single `.ics` calendar file with **all five daily prayers + Jummah** that you can import once and forget. No manual entry, no checking apps, no switching between calendars — just prayer times integrated seamlessly into your existing workflow.
+**Easily import accurate UAE prayer times into any modern calendar.** This tool generates a ready-made `.ics` calendar file with all five daily prayers + Jummah that works with Google Calendar, Apple Calendar, Outlook, and more. Just import once and get accurate prayer time events for your emirate and city.
 
 ![Proton Calendar Example](https://i.imgur.com/2kYTCyC.png)
 
-## Why This Matters
-
-**The Problem:**
-- Constantly checking prayer time apps during meetings
-- Manually adding events to your calendar every month
-- Forgetting to switch time zones when traveling
-- Missing prayers because your calendar doesn't remind you
-
-**The Solution:**
-- **One-time setup** — import once, set it and forget it
-- **Accurate times** — fetched directly from official AWQAF UAE API
-- **All prayers included** — Fajr, Zuhr, Asr, Maghrib, Isha, and Jummah
-- **Any device** — works on mobile, desktop, any calendar app
-- **Automatic** — just generate a new .ics file each month
-
-Perfect for professionals who want their spiritual obligations integrated seamlessly into their daily schedule without interrupting their workflow.
-
 ## What You Get
 
-- **All 5 Daily Prayers** — Fajr, Zuhr, Asr, Maghrib, Isha with accurate times
-- **Jummah Prayer** — Every Friday at 12:45 PM (replaces Zuhr)
-- **Adhan Reminders** — Get notified when adhan starts, before iqamah
-- **One-Time Import** — Add to your calendar once, forget about it
-- **Mobile-Friendly** — Works on your phone, no app switching needed
-- **7 Emirates, 60+ Cities** — Accurate times across the entire UAE
-- **Official Data** — Prayer times from AWQAF UAE (the official source)
+- **All 5 Daily Prayers**
+- **Jummah Prayer**
+- **Adhan Reminders**
+- **One-Time Import**
+- **Mobile-Friendly**
+- **7 Emirates, 60+ Cities**
+- **Official UAE AWQAF Data**
 
 ## How It Works
 
