@@ -15,7 +15,9 @@ import pytz
 from flask import Flask, redirect, render_template, request, send_file, url_for
 
 # Set template folder to parent directory
-app = Flask(__name__, template_folder='../templates')
+import os
+template_folder = os.path.join(os.path.dirname(__file__), '..', 'templates')
+app = Flask(__name__, template_folder=template_folder)
 
 # Load the main script as a module
 script_path = Path(__file__).parent / 'generator.py'
