@@ -38,11 +38,13 @@ wheels/
 *.swp
 *.swo
 
-# Output files
+# Output files (live-generated at repo root; calendars/ is committed)
 *.log
-2024/
-2025/
-2026/
+/2024/
+/2025/
+/2026/
+/2027/
+/2028/
 
 # OS
 .DS_Store

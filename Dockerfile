@@ -36,6 +36,8 @@ USER root
 COPY src/ ./src/
 COPY templates/ ./templates/
 COPY main.py .
+COPY locations_cache.json .
+COPY calendars/ ./calendars/
 
 # Ensure appuser can read the files
 RUN chown -R appuser:appuser /app && \

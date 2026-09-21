@@ -371,6 +371,64 @@ class AWQAFApi:
     LOCATIONS_URL = "https://mobileappapi.awqaf.gov.ae/APIS/v3/prayer-time/EmiratesAndCities"
     LOCATIONS_CACHE_FILE = "locations_cache.json"
     CONTEXT_FILE = "browser_context.json"
+
+    @staticmethod
+    def _api_headers(token: str) -> dict[str, str]:
+        """Headers mimicking the official site's API calls."""
+        return {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0',
+            'Accept': '*/*',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate, br, zstd',
+            'Authorization': f'Bearer {token}',
+            'Origin': 'https://www.awqaf.gov.ae',
+            'DNT': '1',
+            'Connection': 'keep-alive',
+            'Referer': 'https://www.awqaf.gov.ae/',
+            'Sec-Fetch-Dest': 'empty',
+            'Sec-Fetch-Mode': 'cors',
+            'Sec-Fetch-Site': 'same-site',
+            'Sec-GPC': '1'
+        }
+
+    @classmethod
+    def _request_prayer_data(cls, start_date: str, end_date: str) -> dict[str, Any]:
+        """
+        Fetch raw prayer data for a date range via plain HTTP.
+        The response contains every city; callers filter by areaNameEn.
+        """
+        url = f"{cls.BASE_URL}/{start_date}/{end_date}?lang=ar"
+
+        try:
+            response = requests.get(url, headers=cls._api_headers(TokenManager.get_token()))
+            if response.status_code == 401:
+                response = requests.get(url, headers=cls._api_headers(TokenManager.refresh_token()))
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            raise APIError(f"Failed to fetch prayer times: {e!s}")
+
+    @staticmethod
+    def _format_prayer_item(item: dict[str, Any]) -> dict[str, Any] | None:
+        """Convert one raw prayerData entry to {date, timings} format."""
+        date = item.get('gDate', '').split('T')[0]
+        if not date:
+            return None
+
+        prayer_times = {}
+        for prayer in ('fajr', 'zuhr', 'asr', 'maghrib', 'isha'):
+            prayer_times[prayer] = ''
+            time_str = item.get(prayer, '')
+            if not time_str:
+                continue
+            time_part = time_str.split('T')[1].split('.')[0]
+            try:
+                time_obj = datetime.strptime(time_part, '%H:%M:%S').replace(tzinfo=pytz.timezone(PrayerConfig.TIMEZONE))
+                prayer_times[prayer] = time_obj.strftime('%H:%M')
+            except ValueError:
+                print(f"Warning: Could not parse time {time_part} for {prayer}")
+
+        return {"date": date, "timings": prayer_times}
     
     @classmethod
     def get_locations(cls) -> dict[str, Any]:
@@ -384,7 +442,9 @@ class AWQAFApi:
             # Try to read from cache first
             if os.path.exists(cls.LOCATIONS_CACHE_FILE):
                 with open(cls.LOCATIONS_CACHE_FILE, 'r') as f:
-                    return json.load(f)
+                    cached = json.load(f)
+                if cached.get("emirates") and cached.get("cities"):
+                    return cached
         except (OSError, json.JSONDecodeError):
             pass  # If any error occurs reading cache, fetch from API
         
@@ -640,7 +700,7 @@ class AWQAFApi:
         
         # Fall back to regular API method
         print("Using regular API method...")
-        
+
         # Format dates for API request
         if day:
             # If day is specified, fetch only that day
@@ -650,107 +710,43 @@ class AWQAFApi:
             _, last_day = calendar.monthrange(year, month)
             start_date = f"{year}-{month:02d}-01"
             end_date = f"{year}-{month:02d}-{last_day:02d}"
-        
-        # Prepare API request
-        url = f"{AWQAFApi.BASE_URL}/{start_date}/{end_date}?lang=ar"
-        
-        def make_request(use_refresh_token=False):
-            if use_refresh_token:
-                token = TokenManager.refresh_token()
-            else:
-                token = TokenManager.get_token()
-                
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0',
-                'Accept': '*/*',
-                'Accept-Language': 'en-US,en;q=0.5',
-                'Accept-Encoding': 'gzip, deflate, br, zstd',
-                'Authorization': f'Bearer {token}',
-                'Origin': 'https://www.awqaf.gov.ae',
-                'DNT': '1',
-                'Connection': 'keep-alive',
-                'Referer': 'https://www.awqaf.gov.ae/',
-                'Sec-Fetch-Dest': 'empty',
-                'Sec-Fetch-Mode': 'cors',
-                'Sec-Fetch-Site': 'same-site',
-                'Sec-GPC': '1'
-            }
-            return requests.get(url, headers=headers)
-        
-        try:
-            # First attempt with existing token
-            response = make_request()
-            
-            # If unauthorized, try once more with a fresh token
-            if response.status_code == 401:
-                response = make_request(use_refresh_token=True)
-                
-            response.raise_for_status()
-            data = response.json()
-            
-            # Format the data
-            formatted_data = {
-                "prayertimes": []
-            }
-            
-            # Process each day's prayer times
-            for item in data.get('prayerData', []):
-                try:
-                    # Check if this is for the requested city
-                    if item.get('areaNameEn', '').lower() != city.lower():
-                        continue
-                    
-                    # Get the date
-                    date = item.get('gDate', '').split('T')[0]  # Get just the date part
-                    if not date:
-                        continue
-                    
-                    # Extract prayer times
-                    prayer_times = {}
-                    for prayer, api_field in [
-                        ('fajr', 'fajr'),
-                        ('zuhr', 'zuhr'),
-                        ('asr', 'asr'),
-                        ('maghrib', 'maghrib'),
-                        ('isha', 'isha')
-                    ]:
-                        time_str = item.get(api_field, '')
-                        if time_str:
-                            # Extract just the time part (HH:MM:SS) from the datetime string
-                            time_part = time_str.split('T')[1].split('.')[0]
-                            # Convert to 24-hour format
-                            try:
-                                time_obj = datetime.strptime(time_part, '%H:%M:%S').replace(tzinfo=pytz.timezone(PrayerConfig.TIMEZONE))
-                                prayer_times[prayer] = time_obj.strftime('%H:%M')
-                            except ValueError:
-                                print(f"Warning: Could not parse time {time_part} for {prayer}")
-                                prayer_times[prayer] = ''
-                        else:
-                            prayer_times[prayer] = ''
-                    
-                    # Add prayer times
-                    formatted_data["prayertimes"].append({
-                        "date": date,
-                        "timings": prayer_times
-                    })
-                except (ValueError, KeyError) as e:
-                    print(f"Error processing prayer times for a day: {e!s}")
-                    continue
-            
-            if not formatted_data["prayertimes"]:
-                raise ValueError(f"No prayer times data found for city: {city}")
-            
-            return formatted_data
-            
-        except requests.RequestException as e:
-            raise APIError(f"Failed to fetch prayer times: {e!s}")
+
+        data = AWQAFApi._request_prayer_data(start_date, end_date)
+
+        formatted_data = {"prayertimes": []}
+        for item in data.get('prayerData', []):
+            if item.get('areaNameEn', '').lower() != city.lower():
+                continue
+            try:
+                formatted = AWQAFApi._format_prayer_item(item)
+                if formatted:
+                    formatted_data["prayertimes"].append(formatted)
+            except (ValueError, KeyError) as e:
+                print(f"Error processing prayer times for a day: {e!s}")
+
+        if not formatted_data["prayertimes"]:
+            raise ValueError(f"No prayer times data found for city: {city}")
+
+        return formatted_data
+
+def calendar_relpath(year: int, month: int, emirate: str, city: str, day: int | None = None) -> str:
+    """Relative path of a generated calendar file under the output root."""
+    month_name = calendar.month_name[month]
+    base = os.path.join(str(year), month_name, emirate)
+    if emirate != city:
+        base = os.path.join(base, city)
+    if day:
+        return os.path.join(base, "Daily", f"{day:02d}{month_name}.ics")
+    return os.path.join(base, f"{month_name}{year}.ics")
+
 
 class CalendarGenerator:
     """Handles generation of .ics calendar files"""
-    def __init__(self, prayer_data: dict[str, Any], city: str, emirate: str):
+    def __init__(self, prayer_data: dict[str, Any], city: str, emirate: str, base_dir: str = ""):
         self.prayer_data = prayer_data
         self.city = city
         self.emirate = emirate
+        self.base_dir = base_dir
         self.first_date = datetime.strptime(prayer_data["prayertimes"][0]["date"], "%Y-%m-%d").replace(tzinfo=pytz.timezone(PrayerConfig.TIMEZONE))
     
     def _create_base_calendar(self) -> Calendar:
@@ -856,23 +852,9 @@ class CalendarGenerator:
     
     def _get_output_path(self, day: int | None = None) -> tuple[str, str]:
         """Get output directory and filename for calendar file"""
-        year = self.first_date.year
-        month_name = self.first_date.strftime("%B")
-        if self.emirate == self.city:
-            base_dir = os.path.join(str(year), month_name, self.emirate)
-        else:
-            base_dir = os.path.join(str(year), month_name, self.emirate, self.city)
-        
-        if day:
-            # Daily calendar
-            output_dir = os.path.join(base_dir, "Daily")
-            filename = f"{day:02d}{month_name}.ics"
-        else:
-            # Monthly calendar
-            output_dir = base_dir
-            filename = f"{month_name}{year}.ics"
-        
-        return output_dir, filename
+        rel = calendar_relpath(self.first_date.year, self.first_date.month,
+                               self.emirate, self.city, day)
+        return os.path.join(self.base_dir, os.path.dirname(rel)), os.path.basename(rel)
     
     def generate(self, day: int | None = None) -> str:
         """

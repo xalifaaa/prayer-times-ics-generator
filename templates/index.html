@@ -53,7 +53,7 @@
             font-size: 14px;
         }
         
-        select {
+        select, input[type="date"] {
             width: 100%;
             padding: 12px;
             border: 2px solid #e0e0e0;
@@ -63,9 +63,26 @@
             transition: border-color 0.3s;
         }
         
-        select:focus {
+        select:focus, input[type="date"]:focus {
             outline: none;
             border-color: #667eea;
+        }
+        
+        .scope-toggle {
+            display: flex;
+            gap: 20px;
+        }
+        
+        .scope-toggle label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-weight: 400;
+            cursor: pointer;
+        }
+        
+        .scope-toggle input[type="radio"] {
+            accent-color: #667eea;
         }
         
         button {
@@ -114,6 +131,13 @@
         .reconfigure a:hover {
             text-decoration: underline;
         }
+        
+        .visitors {
+            text-align: center;
+            margin-top: 15px;
+            font-size: 12px;
+            color: #999;
+        }
     </style>
 </head>
 <body>
@@ -140,23 +164,15 @@
             </div>
             
             <div class="form-group">
-                <label for="year">Year</label>
-                <select id="year" name="year" required>
-                    {% for y in years %}
-                    <option value="{{ y }}" {% if y == current_year %}selected{% endif %}>{{ y }}</option>
-                    {% endfor %}
-                </select>
+                <label for="date">Date</label>
+                <input type="date" id="date" name="date" value="{{ today }}" required>
             </div>
-            
-            <div class="form-group">
-                <label for="month">Month</label>
-                <select id="month" name="month" required>
-                    {% for i, m in months.items() %}
-                    <option value="{{ i }}" {% if i == current_month %}selected{% endif %}>{{ m }}</option>
-                    {% endfor %}
-                </select>
+
+            <div class="form-group scope-toggle">
+                <label><input type="radio" name="scope" value="month" checked> Whole month</label>
+                <label><input type="radio" name="scope" value="day"> Single day</label>
             </div>
-            
+
             <button type="submit">Generate Calendar</button>
         </form>
         
@@ -164,9 +180,13 @@
             The .ics file works with Google Calendar, Apple Calendar, and Outlook.
         </div>
         
+        {% if not static_mode %}
         <div class="reconfigure">
             <a href="/setup">Reconfigure Settings</a>
         </div>
+        {% endif %}
+        
+        <div class="visitors" id="visitor-count"></div>
     </div>
     
     <script>
@@ -206,6 +226,16 @@
                     console.error('Error:', error);
                 });
         }
+
+        fetch('/api/visitors')
+            .then(response => response.json())
+            .then(data => {
+                if (data.count !== null && data.count !== undefined) {
+                    document.getElementById('visitor-count').textContent =
+                        data.count.toLocaleString() + ' unique visitors';
+                }
+            })
+            .catch(() => {});
     </script>
 </body>
 </html>

@@ -6,16 +6,30 @@ Server-side rendered for speed and SEO
 import asyncio
 import calendar
 import importlib.util
+import io
+import logging
 import os
 import sys
 import time
 import urllib.error
 import urllib.request
+import uuid
+from datetime import date as date_cls
 from datetime import datetime
 from pathlib import Path
 
 import pytz
+import requests
 from flask import Flask, redirect, render_template, request, send_file, url_for
+from werkzeug.middleware.proxy_fix import ProxyFix
+from werkzeug.utils import safe_join
+
+# Initialize Azure Application Insights telemetry when configured
+if os.environ.get('APPLICATIONINSIGHTS_CONNECTION_STRING'):
+    from azure.monitor.opentelemetry import configure_azure_monitor
+    configure_azure_monitor()
+
+logger = logging.getLogger('prayer-times-app')
 
 # Set template folder to absolute path
 # Get the root directory (parent of src/)
@@ -25,6 +39,9 @@ template_folder = os.path.join(root_dir, 'templates')
 template_folder = os.path.abspath(template_folder)
 app = Flask(__name__, template_folder=template_folder)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+
+# Trust X-Forwarded-* headers from the Azure App Service reverse proxy
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 # Load the main script as a module
 script_path = Path(__file__).parent / 'generator.py'
@@ -39,17 +56,55 @@ CalendarGenerator = prayer_module.CalendarGenerator
 PrayerConfig = prayer_module.PrayerConfig
 
 
+AI_APP_ID = os.environ.get('APPINSIGHTS_APP_ID')
+AI_API_KEY = os.environ.get('APPINSIGHTS_API_KEY')
+COUNT_CACHE_SECONDS = 300
+_count_cache = {'value': None, 'fetched_at': 0}
+
+# Hosted deployments serve pre-generated calendars only; localhost uses the live AWQAF API
+STATIC_MODE = os.environ.get('STATIC_MODE', '').lower() in ('1', 'true', 'yes')
+
+
+@app.after_request
+def track_unique_visitor(response):
+    """Assign a visitor cookie and log one telemetry event per unique browser."""
+    if request.path == '/' and request.method == 'GET' and 'visitor_id' not in request.cookies:
+        visitor_id = str(uuid.uuid4())
+        response.set_cookie('visitor_id', visitor_id, max_age=60 * 60 * 24 * 365 * 5,
+                            samesite='Lax', secure=request.is_secure, httponly=True)
+        logger.info('unique_visitor %s', visitor_id)
+    return response
+
+
+def get_visitor_count():
+    """Query Application Insights for the count of unique visitors (cached)."""
+    if not (AI_APP_ID and AI_API_KEY):
+        return None
+    now = time.time()
+    if _count_cache['value'] is not None and now - _count_cache['fetched_at'] < COUNT_CACHE_SECONDS:
+        return _count_cache['value']
+    try:
+        resp = requests.get(
+            f'https://api.applicationinsights.io/v1/apps/{AI_APP_ID}/query',
+            params={'query': 'traces | where message startswith "unique_visitor " | summarize dcount(message)'},
+            headers={'x-api-key': AI_API_KEY}, timeout=10)
+        resp.raise_for_status()
+        count = int(resp.json()['tables'][0]['rows'][0][0])
+        _count_cache.update(value=count, fetched_at=now)
+        return count
+    except Exception as e:  # noqa: BLE001
+        print(f'Error fetching visitor count: {e}')
+        return _count_cache['value']
+
+
 @app.route('/')
 def index():
     """Render the main page with the form"""
     emirates = []
     
-    # Try to fetch emirates, but don't fail if credentials aren't available
+    # Emirates come from the committed locations cache; no credentials needed
     try:
-        if os.path.exists('config.json'):
-            emirates = AWQAFApi.get_emirates()
-            if not emirates:
-                emirates = []
+        emirates = AWQAFApi.get_emirates() or []
     except Exception as e:  # noqa: BLE001
         print(f"Error fetching emirates: {e}")
         emirates = []
@@ -58,18 +113,12 @@ def index():
     if not emirates:
         return render_template('setup-form.html')
     
-    current_year = datetime.now(pytz.timezone(PrayerConfig.TIMEZONE)).year
-    current_month = datetime.now(pytz.timezone(PrayerConfig.TIMEZONE)).month
-    
-    months = {i: name for i, name in enumerate(calendar.month_name, start=1)}  # January through December
-    years = list(range(current_year, current_year + 2))  # Current year and next year
-    
-    return render_template('index.html', 
+    today = datetime.now(pytz.timezone(PrayerConfig.TIMEZONE)).strftime('%Y-%m-%d')
+
+    return render_template('index.html',
                          emirates=emirates,
-                         years=years,
-                         months=months,
-                         current_year=current_year,
-                         current_month=current_month)
+                         today=today,
+                         static_mode=STATIC_MODE)
 
 
 @app.route('/generate', methods=['POST'])
@@ -77,52 +126,89 @@ def generate():
     """Generate prayer times calendar"""
     emirate = request.form.get('emirate')
     city = request.form.get('city')
-    year = int(request.form.get('year'))
-    month = int(request.form.get('month'))
-    
-    if not all([emirate, city, year, month]):
+    date_str = request.form.get('date')
+    scope = request.form.get('scope', 'month')
+
+    if not all([emirate, city, date_str]):
         return redirect(url_for('index'))
-    
+
     try:
-        # Fetch prayer times
-        prayer_data = AWQAFApi.fetch_prayer_times(year, month, None, city)
-        
-        # Generate calendar
-        generator = CalendarGenerator(prayer_data, city, emirate)
-        filepath = generator.generate()
-        
-        # Extract filename for download
-        filename = os.path.basename(filepath)
-        
+        sel = date_cls.fromisoformat(date_str)
+        year, month = sel.year, sel.month
+        day = sel.day if scope == 'day' else None
+
+        if STATIC_MODE:
+            month_rel = prayer_module.calendar_relpath(year, month, emirate, city)
+            month_path = safe_join(root_dir, os.path.join('calendars', month_rel))
+            if not month_path or not os.path.isfile(month_path):
+                raise FileNotFoundError('Calendar not available for the selected period.')
+            day_params = {'date': date_str, 'emirate': emirate, 'city': city} if day else None
+            relpath = None if day else os.path.join('calendars', month_rel)
+        else:
+            prayer_data = AWQAFApi.fetch_prayer_times(year, month, day, city)
+            filepath = CalendarGenerator(prayer_data, city, emirate, base_dir=root_dir).generate(day)
+            relpath = os.path.relpath(filepath, root_dir)
+            day_params = None
+
+        if relpath:
+            relpath = relpath.replace(os.sep, '/')
         return render_template('success.html',
-                             filename=filename,
+                             relpath=relpath,
+                             day_params=day_params,
+                             filename=os.path.basename(relpath) if relpath else f'{date_str}.ics',
                              city=city,
                              emirate=emirate,
                              year=year,
                              month=calendar.month_name[month])
-    
+
     except Exception as e:  # noqa: BLE001
         return render_template('error.html', error=str(e))
 
 
-@app.route('/download/<path:filename>')
-def download(filename):
-    """Download the generated ICS file"""
-    # Get the root directory (where app.py is)
-    root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    
-    # Find the file in the generated directories
-    for root, dirs, files in os.walk(root_dir):
-        if filename in files:
-            filepath = os.path.join(root, filename)
-            return send_file(filepath, as_attachment=True, download_name=filename)
-    
-    return "File not found", 404
+@app.route('/download/<path:relpath>')
+def download(relpath):
+    """Download a generated .ics file by its path relative to the app root."""
+    if not relpath.endswith('.ics'):
+        return "File not found", 404
+    filepath = safe_join(root_dir, relpath)
+    if not filepath or not os.path.isfile(filepath):
+        return "File not found", 404
+    return send_file(filepath, as_attachment=True, download_name=os.path.basename(relpath))
+
+
+@app.route('/download/day/<date>/<emirate>/<city>')
+def download_day(date, emirate, city):
+    """Serve a single-day calendar filtered from the month's pre-generated file."""
+    from icalendar import Calendar
+
+    try:
+        sel = date_cls.fromisoformat(date)
+    except ValueError:
+        return "Invalid date", 400
+    rel = prayer_module.calendar_relpath(sel.year, sel.month, emirate, city)
+    filepath = safe_join(root_dir, os.path.join('calendars', rel))
+    if not filepath or not os.path.isfile(filepath):
+        return "File not found", 404
+
+    cal = Calendar.from_ical(Path(filepath).read_bytes())
+    out = Calendar()
+    for key, val in cal.items():
+        out.add(key, val)
+    for comp in cal.walk('VEVENT'):
+        dt = comp.decoded('dtstart')
+        if (dt.date() if hasattr(dt, 'date') else dt).isoformat() == date:
+            out.add_component(comp)
+
+    return send_file(io.BytesIO(out.to_ical()), as_attachment=True,
+                     download_name=f"{sel.day:02d}{calendar.month_name[sel.month]}.ics",
+                     mimetype='text/calendar')
 
 
 @app.route('/setup', methods=['GET', 'POST'])
 def setup():
-    """Handle setup through the web interface"""
+    """Handle setup through the web interface (local mode only)"""
+    if STATIC_MODE:
+        return redirect(url_for('index'))
     if request.method == 'POST':
         # Run the credential extraction
         try:
@@ -147,6 +233,24 @@ def cities(emirate):
         return {'cities': cities}
     except Exception as e:  # noqa: BLE001
         return {'error': str(e)}, 500
+
+
+@app.route('/api/visitors')
+def api_visitors():
+    """Return the unique visitor count for display on the site."""
+    return {'count': get_visitor_count()}
+
+
+@app.route('/badge/visitors')
+def badge_visitors():
+    """Shields.io endpoint-format JSON for the README visitor badge."""
+    count = get_visitor_count()
+    return {
+        'schemaVersion': 1,
+        'label': 'visitors',
+        'message': str(count) if count is not None else 'n/a',
+        'color': 'green',
+    }
 
 
 @app.route('/debug/net')

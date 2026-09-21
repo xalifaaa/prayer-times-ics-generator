@@ -59,6 +59,14 @@ jobs:
           az webapp show --name "${{ env.APP_NAME }}" --resource-group "${{ env.RESOURCE_GROUP }}" >/dev/null 2>&1 || \
           az webapp create --name "${{ env.APP_NAME }}" --resource-group "${{ env.RESOURCE_GROUP }}" --plan "${{ env.APP_NAME }}-plan" --deployment-container-image-name "mcr.microsoft.com/appsvc/staticsite:latest"
 
+      - name: Ensure Application Insights exists
+        run: |
+          LOCATION=$(az group show --name "${{ env.RESOURCE_GROUP }}" --query location -o tsv)
+          az monitor log-analytics workspace show --resource-group "${{ env.RESOURCE_GROUP }}" --workspace-name "${{ env.APP_NAME }}-logs" >/dev/null 2>&1 || \
+          az monitor log-analytics workspace create --resource-group "${{ env.RESOURCE_GROUP }}" --workspace-name "${{ env.APP_NAME }}-logs" --location "$LOCATION" > /dev/null
+          az monitor app-insights component show --app "${{ env.APP_NAME }}-insights" --resource-group "${{ env.RESOURCE_GROUP }}" >/dev/null 2>&1 || \
+          az monitor app-insights component create --app "${{ env.APP_NAME }}-insights" --resource-group "${{ env.RESOURCE_GROUP }}" --location "$LOCATION" --kind web --workspace "${{ env.APP_NAME }}-logs" > /dev/null
+
       - name: Configure container image and ACR credentials
         run: |
           az acr update --name "${{ env.ACR_NAME }}" --admin-enabled true
@@ -75,10 +83,21 @@ jobs:
 
       - name: Configure app settings
         run: |
+          AI_CONN=$(az monitor app-insights component show --app "${{ env.APP_NAME }}-insights" --resource-group "${{ env.RESOURCE_GROUP }}" --query connectionString -o tsv)
+          AI_APPID=$(az monitor app-insights component show --app "${{ env.APP_NAME }}-insights" --resource-group "${{ env.RESOURCE_GROUP }}" --query appId -o tsv)
+          AI_KEY=$(az monitor app-insights api-key show --app "${{ env.APP_NAME }}-insights" --resource-group "${{ env.RESOURCE_GROUP }}" --api-key site-reader --query apiKey -o tsv 2>/dev/null || true)
+          if [ -z "$AI_KEY" ]; then
+            AI_KEY=$(az monitor app-insights api-key create --app "${{ env.APP_NAME }}-insights" --resource-group "${{ env.RESOURCE_GROUP }}" --api-key site-reader --read-properties ReadTelemetry --query apiKey -o tsv)
+          fi
+          echo "::add-mask::$AI_CONN"
+          echo "::add-mask::$AI_KEY"
           az webapp config appsettings set \
             --name "${{ env.APP_NAME }}" \
             --resource-group "${{ env.RESOURCE_GROUP }}" \
-            --settings WEBSITES_PORT=8080 > /dev/null
+            --settings WEBSITES_PORT=8080 STATIC_MODE=true \
+              APPLICATIONINSIGHTS_CONNECTION_STRING="$AI_CONN" \
+              APPINSIGHTS_APP_ID="$AI_APPID" \
+              APPINSIGHTS_API_KEY="$AI_KEY" > /dev/null
 
       - name: Restart App Service
         run: |

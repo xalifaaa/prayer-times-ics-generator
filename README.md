@@ -1,8 +1,9 @@
 # UAE Prayer (Salah) Times Calendar Event Generator
 
 ![Working Status](https://github.com/xalifaaa/prayer-times-ics-generator/actions/workflows/working.yml/badge.svg)
+![Unique Visitors](https://img.shields.io/endpoint?url=https%3A%2F%2Fuae-salah-calendar-event-generator.azurewebsites.net%2Fbadge%2Fvisitors)
 
-**Coming soon:** [https://prayer-times-uae.example.com](https://prayer-times-uae.example.com) *(To Be Hosted Soon..)*
+**Live app:** [https://uae-salah-calendar-event-generator.azurewebsites.net](https://uae-salah-calendar-event-generator.azurewebsites.net)
 
 **Easily import accurate UAE prayer times into any modern calendar as events with preset reminders.** This tool generates a ready-made `.ics` calendar file with all five daily prayers + Jummah. 
 
@@ -26,7 +27,7 @@ Setup once, generate, and import once to get accurate prayer time events for you
 
 Visit the web app to generate your calendar directly in your browser - works on iOS, Android, MacOS, Windows, Linux, and more!
 
-**Coming soon:** [https://prayer-times-uae.example.com](https://prayer-times-uae.example.com) *(To Be Hosted Soon..)*
+**Live app:** [https://uae-salah-calendar-event-generator.azurewebsites.net](https://uae-salah-calendar-event-generator.azurewebsites.net)
 
 ### Self-Host Web App
 
@@ -141,6 +142,10 @@ JUMMAH_DURATION = 45
 - **Format:** Standard .ics calendar file
 - **Compatibility:** Google Calendar, Apple Calendar, Outlook, and more
 - **Timezone:** GST (Gulf Standard Time)
+
+## Architecture
+
+The hosted app serves **pre-generated** `.ics` files from `calendars/` — AWQAF only accepts traffic from residential UAE IPs, so a cloud-hosted runtime can't call the API directly. Maintainers regenerate the data with `python scripts/pregenerate.py`.
 
 ## Security
 
