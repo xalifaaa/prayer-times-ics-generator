@@ -13,6 +13,7 @@ The `.ics` file is compatible with popular calendar platforms such as **Google C
 - **Comprehensive Location Support** - Supports all 7 emirates and 60+ cities in the UAE
 - **Automated Credential Extraction** - Uses Playwright to extract API tokens automatically
 - **Dual Credential Support** - Handles both traditional client credentials and direct API tokens
+- **Jummah Prayer Support** - Automatically includes Jummah prayer on Fridays (12:45 PM - 1:30 PM)
 - **Configurable Prayer Durations** - Customizable adhan and prayer duration times
 - **Color-coded Events** - Green for Adhan, Cerise for Prayer times
 - **Automatic Token Management** - Handles authorization token refresh when needed
@@ -139,11 +140,15 @@ ADHAN_DURATIONS = {
     "fajr": 25,
     "zuhr": 20,
     "asr": 20,
-    "maghrib: 5,
+    "maghrib": 5,
     "isha": 20
 }
 
 PRAYER_DURATION = 10
+
+# Jummah prayer (Friday only)
+JUMMAH_ADHAN_TIME = "12:45"  # Fixed adhan time
+JUMMAH_DURATION = 45  # Duration in minutes
 ```
 
 ### Calendar Colors

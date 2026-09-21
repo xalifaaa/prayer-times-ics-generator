@@ -206,6 +206,10 @@ class PrayerConfig:
     }
     PRAYER_DURATION: ClassVar[int] = 10
     
+    # Jummah prayer configuration (Friday only)
+    JUMMAH_ADHAN_TIME: ClassVar[str] = "12:45"  # Fixed adhan time for Jummah
+    JUMMAH_DURATION: ClassVar[int] = 45  # From 12:45 to 1:30 = 45 minutes
+    
     # Calendar colors
     ADHAN_COLOR: ClassVar[str] = "#008000"  # Green
     PRAYER_COLOR: ClassVar[str] = "#ba1e55"  # Proton Calendar's Cerise
@@ -823,6 +827,30 @@ class CalendarGenerator:
         
         return event
     
+    def _create_jummah_event(self, date: str) -> Event:
+        """Create a Jummah prayer event (Friday only)"""
+        event_dt = self._parse_datetime(f"{date} {PrayerConfig.JUMMAH_ADHAN_TIME}")
+        
+        event = Event()
+        event_str = f"{date}_jummah_{self.city}"
+        event['uid'] = self._create_event_uid(event_str)
+        
+        # Set event times (Jummah lasts from 12:45 to 1:30 = 45 minutes)
+        event.add('dtstart', event_dt)
+        event.add('dtend', event_dt + timedelta(minutes=PrayerConfig.JUMMAH_DURATION))
+        
+        # Set event properties
+        event.add('summary', 'Jummah Prayer')
+        event.add('description', 'Jummah (Friday) Prayer Time')
+        event.add('location', self.city)
+        event.add('color', PrayerConfig.PRAYER_COLOR)
+        
+        # Add notification
+        alarm = self._create_alarm('Jummah Prayer in 5 minutes', timedelta(minutes=-5))
+        event.add_component(alarm)
+        
+        return event
+    
     def _parse_datetime(self, time_str: str) -> datetime:
         """Parse prayer time string into datetime object"""
         return datetime.fromisoformat(time_str).replace(tzinfo=pytz.timezone(PrayerConfig.TIMEZONE))
@@ -867,6 +895,10 @@ class CalendarGenerator:
                 if current_day != day:
                     continue
             
+            # Check if this is Friday (weekday 4 in Python)
+            date_obj = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=pytz.timezone(PrayerConfig.TIMEZONE))
+            is_friday = date_obj.weekday() == 4  # Monday=0, Friday=4
+            
             # Process each prayer
             for prayer in ["fajr", "zuhr", "asr", "maghrib", "isha"]:
                 time = day_data["timings"][prayer]
@@ -874,6 +906,13 @@ class CalendarGenerator:
                     continue
                 
                 try:
+                    # On Friday, replace Zuhr with Jummah
+                    if prayer == "zuhr" and is_friday:
+                        # Create Jummah event instead of Zuhr
+                        jummah_event = self._create_jummah_event(date)
+                        cal.add_component(jummah_event)
+                        continue
+                    
                     # Create Adhan event
                     adhan_event = self._create_adhan_event(date, prayer, time)
                     cal.add_component(adhan_event)
@@ -942,7 +981,7 @@ Events:
     1. Adhan till Iqamah (Green)
        - Duration varies by prayer:
          * Fajr: 25 minutes
-         * Dhuhr: 20 minutes
+         * Zuhr: 20 minutes (except Friday)
          * Asr: 20 minutes
          * Maghrib: 5 minutes
          * Isha: 20 minutes
@@ -950,6 +989,11 @@ Events:
 
     2. Prayer (Cerise)
        - Duration: 10 minutes
+       - Notification: 5 minutes before
+
+    3. Jummah Prayer (Friday only, Cerise)
+       - Adhan: 12:45 PM
+       - Duration: 45 minutes (until 1:30 PM)
        - Notification: 5 minutes before
     """
     print(help_text)
