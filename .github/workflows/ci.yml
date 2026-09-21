@@ -16,7 +16,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.14'
+        python-version: '3.13'
     
     - name: Install dependencies
       run: |
@@ -29,6 +29,3 @@ jobs:
     
     - name: Check Python syntax
       run: python -m py_compile prayer-times-ics-generator.py
-    
-    - name: Test imports
-      run: python -c "import prayer_times_ics_generator"
