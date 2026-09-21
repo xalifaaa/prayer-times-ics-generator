@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UAE Prayer Times Calendar Generator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        
+        select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            background: white;
+            transition: border-color 0.3s;
+        }
+        
+        select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        button {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        .info {
+            text-align: center;
+            margin-top: 20px;
+            padding: 15px;
+            background: #f0f7ff;
+            border-radius: 8px;
+            font-size: 13px;
+            color: #0066cc;
+        }
+        
+        .reconfigure {
+            text-align: center;
+            margin-top: 20px;
+        }
+        
+        .reconfigure a {
+            color: #667eea;
+            text-decoration: none;
+            font-size: 14px;
+        }
+        
+        .reconfigure a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🕌 UAE Prayer Times</h1>
+        <p class="subtitle">Generate your prayer times calendar (.ics file)</p>
+        
+        <form method="POST" action="/generate">
+            <div class="form-group">
+                <label for="emirate">Emirate</label>
+                <select id="emirate" name="emirate" required onchange="loadCities()">
+                    <option value="">Select an emirate</option>
+                    {% for emirate in emirates %}
+                    <option value="{{ emirate.emirateNameEn }}">{{ emirate.emirateNameEn }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="city">City</label>
+                <select id="city" name="city" required disabled>
+                    <option value="">Select an emirate first</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="year">Year</label>
+                <select id="year" name="year" required>
+                    {% for y in years %}
+                    <option value="{{ y }}" {% if y == current_year %}selected{% endif %}>{{ y }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="month">Month</label>
+                <select id="month" name="month" required>
+                    {% for i, m in months.items() %}
+                    <option value="{{ i }}" {% if i == current_month %}selected{% endif %}>{{ m }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <button type="submit">Generate Calendar</button>
+        </form>
+        
+        <div class="info">
+            The .ics file works with Google Calendar, Apple Calendar, and Outlook.
+        </div>
+        
+        <div class="reconfigure">
+            <a href="/setup">Reconfigure Settings</a>
+        </div>
+    </div>
+    
+    <script>
+        function loadCities() {
+            const emirate = document.getElementById('emirate').value;
+            const citySelect = document.getElementById('city');
+            
+            if (!emirate) {
+                citySelect.disabled = true;
+                citySelect.innerHTML = '<option value="">Select an emirate first</option>';
+                return;
+            }
+            
+            citySelect.disabled = true;
+            citySelect.innerHTML = '<option value="">Loading...</option>';
+            
+            fetch(`/cities/${emirate}`)
+                .then(response => response.json())
+                .then(data => {
+                    citySelect.disabled = false;
+                    citySelect.innerHTML = '<option value="">Select a city</option>';
+                    
+                    if (data.cities && data.cities.length > 0) {
+                        data.cities.forEach(city => {
+                            const option = document.createElement('option');
+                            option.value = city.cityNameEn;
+                            option.textContent = city.cityNameEn;
+                            citySelect.appendChild(option);
+                        });
+                    } else {
+                        citySelect.innerHTML = '<option value="">No cities found</option>';
+                    }
+                })
+                .catch(error => {
+                    citySelect.disabled = false;
+                    citySelect.innerHTML = '<option value="">Error loading cities</option>';
+                    console.error('Error:', error);
+                });
+        }
+    </script>
+</body>
+</html>

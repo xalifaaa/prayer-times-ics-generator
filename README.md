@@ -1,141 +1,148 @@
-# UAE Prayer Times Calendar Events Generator
+# UAE Prayer Times Calendar
 
 ![Working Status](https://github.com/xalifaaa/prayer-times-ics-generator/actions/workflows/working.yml/badge.svg)
 
-A Python application that generates a **single `.ics` file** on a day or month basis with prayer times **fetched from the official UAE AWQAF Prayer Time and Locations API.** This single-setup, hassle-free solution allows Muslims in the UAE to **seamlessly import all adhan-to-iqamah and prayer time events** into their calendars with just **one** `.ics` file.
+**Never miss a prayer again.** Automatically import accurate UAE prayer times directly into your calendar — Google Calendar, Apple Calendar, Outlook, and more.
 
-The `.ics` file is compatible with popular calendar platforms such as **Google Calendar, Apple Calendar, Microsoft Outlook, and more**, ensuring easy integration without the need to import multiple files.
+As a busy professional in the UAE, managing prayer times shouldn't add complexity to your day. This tool generates a single `.ics` calendar file with **all five daily prayers + Jummah** that you can import once and forget. No manual entry, no checking apps, no switching between calendars — just prayer times integrated seamlessly into your existing workflow.
 
 ![Proton Calendar Example](https://i.imgur.com/2kYTCyC.png)
 
-## Core Features
+## Why This Matters
 
-- **Guided Setup** - Interactive setup with automatic credential extraction from the AWQAF website
-- **Smart Defaults** - Defaults to current month and year, with saved location preferences
-- **Comprehensive Location Support** - Supports all 7 emirates and 60+ cities in the UAE
-- **Automated Credential Extraction** - Uses Playwright to extract API tokens automatically
-- **Dual Credential Support** - Handles both traditional client credentials and direct API tokens
-- **Jummah Prayer Support** - Automatically includes Jummah prayer on Fridays (12:45 PM - 1:30 PM)
-- **Configurable Prayer Durations** - Customizable adhan and prayer duration times
-- **Color-coded Events** - Green for Adhan, Cerise for Prayer times
-- **Automatic Token Management** - Handles authorization token refresh when needed
+**The Problem:**
+- Constantly checking prayer time apps during meetings
+- Manually adding events to your calendar every month
+- Forgetting to switch time zones when traveling
+- Missing prayers because your calendar doesn't remind you
 
-## Installation
+**The Solution:**
+- **One-time setup** — import once, set it and forget it
+- **Accurate times** — fetched directly from official AWQAF UAE API
+- **All prayers included** — Fajr, Zuhr, Asr, Maghrib, Isha, and Jummah
+- **Any device** — works on mobile, desktop, any calendar app
+- **Automatic** — just generate a new .ics file each month
 
-1. Clone the repository:
+Perfect for professionals who want their spiritual obligations integrated seamlessly into their daily schedule without interrupting their workflow.
+
+## What You Get
+
+- **All 5 Daily Prayers** — Fajr, Zuhr, Asr, Maghrib, Isha with accurate times
+- **Jummah Prayer** — Every Friday at 12:45 PM (replaces Zuhr)
+- **Adhan Reminders** — Get notified when adhan starts, before iqamah
+- **One-Time Import** — Add to your calendar once, forget about it
+- **Mobile-Friendly** — Works on your phone, no app switching needed
+- **7 Emirates, 60+ Cities** — Accurate times across the entire UAE
+- **Official Data** — Prayer times from AWQAF UAE (the official source)
+
+## How It Works
+
+**1. Set up once** — Run setup or use the web interface (30 seconds)
+**2. Choose your location** — Select your emirate and city
+**3. Generate .ics file** — One click for any month
+**4. Import to calendar** — Google, Apple, Outlook — whatever you use
+**5. Done** — Your calendar now has all prayer times automatically
+
+## Quick Start
+
+### Web Interface
+
+Visit the web app to generate your calendar directly in your browser — works on mobile too.
+
+**Coming soon:** [https://prayer-times-uae.example.com](https://prayer-times-uae.example.com) *(To Be Hosted Soon..)*
+
+### Self-Host Web App
+
+Want to host it yourself? It's easy:
+
 ```bash
+# Clone the repository
 git clone https://github.com/xalifaaa/prayer-times-ics-generator.git
-
 cd prayer-times-ics-generator
-```
 
-2. Install required dependencies:
-```bash
+# Install dependencies
 pip install -r requirements.txt
+
+# Run the web app
+python app.py
 ```
 
-3. Run the guided setup:
+Visit `http://localhost:5000` in your browser.
+
+### Command Line
+
 ```bash
+# Clone the repository
+git clone https://github.com/xalifaaa/prayer-times-ics-generator.git
+cd prayer-times-ics-generator
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run setup (30 seconds)
 python prayer-times-ics-generator.py --setup
+
+# Generate your calendar
+python prayer-times-ics-generator.py
 ```
 
-The guided setup will:
-- Automatically extract API credentials from the AWQAF website using Playwright
-- Save browser context and tokens for legitimate API access (v3 API)
-- Let you select your preferred emirate and city from available options (7 emirates, 60+ cities)
-- Set up default preferences for easy future use
-
-**Note:** The AWQAF API has moved to v3 endpoints. The automated extraction is designed to work with the current API structure and saves both tokens and browser context for legitimate API access.
-
-**Important**: Keep your `config.json` and `browser_context.json` files secure and never commit them to version control. The `.gitignore` file is configured to exclude these sensitive files.
+That's it. Import the `.ics` file into your calendar and you're done.
 
 ## Usage
 
-### First Time Setup
+### Web Interface
 
-Run the guided setup for easy configuration:
 ```bash
-python prayer-times-ics-generator.py --setup
+python app.py
 ```
 
-### Generating Calendars
+Visit `http://localhost:5000` — works on mobile too.
 
-After setup, you can generate calendars using the simple command:
+### Command Line
+
+**Generate for current month (your default location):**
 ```bash
 python prayer-times-ics-generator.py
 ```
 
-This will generate a calendar for the current month and year using your default location.
-
-### Advanced Usage
-
-You can override defaults or specify different options:
-
+**Generate for a specific month:**
 ```bash
-# Generate for specific location
-python prayer-times-ics-generator.py --city "Abu Dhabi" --emirate "Abu Dhabi"
-
-# Generate for specific time period
 python prayer-times-ics-generator.py --year 2026 --month 10
-
-# Generate for a specific day
-python prayer-times-ics-generator.py --day 15
-
-# Combine options
-python prayer-times-ics-generator.py --city "Sharjah" --emirate "Sharjah" --year 2026 --month 12
 ```
 
-### Command Line Arguments
-
-- `--setup`: Run guided setup for first-time users
-- `--city`: City name (overrides default from setup)
-- `--emirate`: Emirate name (overrides default from setup)
-- `--year`: Year (default: current year)
-- `--month`: Month number (1-12, default: current month)
-- `--day`: Specific day (optional)
-- `--list-emirates`: List all available emirates
-- `--list-cities`: List all cities in the specified emirate
-- `--show-help`: Show detailed help message
-
-### Listing Emirates and Cities
-
-To view available emirates and cities, use the following commands:
-
+**Generate for a different city:**
 ```bash
-# List all emirates
-python prayer-times-ics-generator.py --list-emirates
+python prayer-times-ics-generator.py --city "Dubai" --emirate "Dubai"
+```
 
-# List all cities in a specific emirate
+**List available locations:**
+```bash
+python prayer-times-ics-generator.py --list-emirates
 python prayer-times-ics-generator.py --emirate "Dubai" --list-cities
 ```
 
-Example output:
-```
-Available emirates:
-  - Abu Dhabi
-  - Dubai
-  - Sharjah
-  - Ajman
-  - Um Al Quwain
-  - Ras AlKhaimah
-  - Fujairah
+## Calendar Events
 
-Cities in Dubai emirate:
-  - Dubai
-    Location: 25.113055, 55.108333
-  - Rural Area dubai
-    Location: 24.708611, 55.617499
-  - Hatta
-    Location: 24.79861, 56.114722
-```
+Each prayer includes two events:
 
-The city listing includes coordinates which may be useful for location-based features.
+**1. Adhan (Green)**
+- Shows when adhan starts
+- Duration varies by prayer (Fajr: 25min, Zuhr: 20min, etc.)
+- Get notified exactly when adhan begins
 
-## Configuration
+**2. Prayer (Cerise)**
+- Starts after adhan time (before iqamah)
+- 10-minute duration
+- 5-minute reminder before prayer time
 
-### Prayer Times Configuration
+**3. Jummah (Friday only, Cerise)**
+- Friday at 12:45 PM
+- 45-minute duration (until 1:30 PM)
+- Replaces regular Zuhr on Fridays
 
-You can customize prayer durations by modifying the `PrayerConfig` class in the script:
+## Customization
+
+Want to adjust prayer durations or colors? Edit the `PrayerConfig` class in the script.
 
 ```python
 ADHAN_DURATIONS = {
@@ -146,69 +153,35 @@ ADHAN_DURATIONS = {
     "isha": 20
 }
 
-PRAYER_DURATION = 10
-
-# Jummah prayer (Friday only)
-JUMMAH_ADHAN_TIME = "12:45"  # Fixed adhan time
-JUMMAH_DURATION = 45  # Duration in minutes
+JUMMAH_ADHAN_TIME = "12:45"
+JUMMAH_DURATION = 45
 ```
 
-### Calendar Colors
+## Tech Details
 
-Calendar event colors can be customized:
-```python
-ADHAN_COLOR = "#008000"  # Green
-PRAYER_COLOR = "#ba1e55"  # Cerise
-```
-
-## Output
-
-The script generates .ics files in the following format:
-
-### Monthly calendar:
-`year/month/emirate/city/[Month][Year].ics`
-
-### Example:
-`2026/September/Abu Dhabi/September2026.ics`
-
-### Daily calendar:
-`year/month/emirate/city/Day/day-[Day][Month].ics`
-
-### Example:
-`2026/September/Abu Dhabi/Day/15-September.ics`
+- **Data Source:** Official AWQAF UAE API (v3)
+- **Coverage:** 7 emirates, 60+ cities across UAE
+- **Format:** Standard .ics calendar file
+- **Compatibility:** Google Calendar, Apple Calendar, Outlook, and more
+- **Timezone:** Asia/Dubai (UAE Standard Time)
 
 ## Security
 
-- **Important**: Never commit your `config.json` or `browser_context.json` files to version control and keep your credentials secure
-- The `.gitignore` file is configured to exclude sensitive files
+Your credentials are stored locally in `config.json` and `browser_context.json`. These files are automatically excluded from version control (see `.gitignore`). Never share these files — they contain your API tokens.
 
-## Automated Testing
+## Reliability
 
-This project uses GitHub Actions to ensure the application remains functional and secure:
+Automated testing runs daily to ensure the tool works correctly:
+- Code quality checks
+- Security vulnerability scanning
+- API connectivity verification
 
-- **Working Pipeline**: Runs on every push, pull request, and daily at 6:00 AM UTC
-- **What it tests:**
-  - Code quality with Ruff linting
-  - Python syntax validation
-  - CLI help command functionality
-  - Security vulnerabilities in dependencies
-- **Frequency:** Automatic on every change, plus daily security scans
-
-View the status of automated tests in the "Working Status" badge at the top of this README or in the [Actions tab](https://github.com/xalifaaa/prayer-times-ics-generator/actions).
-
-## Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+Check the "Working Status" badge at the top of this page.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT License — use it freely for personal or commercial purposes.
 
-## Acknowledgments
+---
 
-- AWQAF UAE for providing the prayer times API
-- Contributors and maintainers of the project
+**Made with ❤️ for Muslims in the UAE who want to stay connected to their faith without it disrupting their professional life.**

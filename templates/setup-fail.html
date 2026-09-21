@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Setup Failed - UAE Prayer Times</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .container {
+            max-width: 500px;
+            width: 100%;
+            background: white;
+            border-radius: 16px;
+            padding: 40px;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        
+        .icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+        }
+        
+        h1 {
+            color: #e74c3c;
+            margin-bottom: 15px;
+            font-size: 28px;
+        }
+        
+        .message {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 16px;
+            word-wrap: break-word;
+        }
+        
+        button {
+            display: inline-block;
+            padding: 16px 32px;
+            background: #e74c3c;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            border: none;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(231, 76, 60, 0.3);
+        }
+        
+        .retry-link {
+            display: inline-block;
+            margin-top: 15px;
+            color: #e74c3c;
+            text-decoration: none;
+            font-size: 14px;
+        }
+        
+        .retry-link:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="icon">❌</div>
+        <h1>Setup Failed</h1>
+        
+        <div class="message">
+            {% if error %}
+            {{ error }}
+            {% else %}
+            Could not extract credentials. Please try again.
+            {% endif %}
+        </div>
+        
+        <a href="/setup" class="button">Try Again</a>
+        
+        <br>
+        <a href="/" class="retry-link">Back to Home</a>
+    </div>
+</body>
+</html>
