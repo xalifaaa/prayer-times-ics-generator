@@ -41,7 +41,7 @@ cd prayer-times-ics-generator
 pip install -r requirements.txt
 
 # Run the web app
-python app.py
+python src/app.py
 ```
 
 Visit `http://localhost:5000` in your browser.
@@ -57,10 +57,10 @@ cd prayer-times-ics-generator
 pip install -r requirements.txt
 
 # Run setup (30 seconds)
-python prayer-times-ics-generator.py --setup
+python main.py --setup
 
 # Generate your calendar
-python prayer-times-ics-generator.py
+python main.py
 ```
 
 That's it. Import the `.ics` file into your calendar and you're done.
@@ -79,23 +79,23 @@ Visit `http://localhost:5000` — works on mobile too.
 
 **Generate for current month (your default location):**
 ```bash
-python prayer-times-ics-generator.py
+python main.py
 ```
 
 **Generate for a specific month:**
 ```bash
-python prayer-times-ics-generator.py --year 2026 --month 10
+python main.py --year 2026 --month 10
 ```
 
 **Generate for a different city:**
 ```bash
-python prayer-times-ics-generator.py --city "Dubai" --emirate "Dubai"
+python main.py --city "Dubai" --emirate "Dubai"
 ```
 
 **List available locations:**
 ```bash
-python prayer-times-ics-generator.py --list-emirates
-python prayer-times-ics-generator.py --emirate "Dubai" --list-cities
+python main.py --list-emirates
+python main.py --emirate "Dubai" --list-cities
 ```
 
 ## Calendar Events

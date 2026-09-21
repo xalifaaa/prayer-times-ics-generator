@@ -12,15 +12,16 @@ from datetime import datetime
 from pathlib import Path
 
 import pytz
-
-# pyrefly: ignore [missing-import]
 from flask import Flask, redirect, render_template, request, send_file, url_for
 
+# Set template folder to parent directory
+app = Flask(__name__, template_folder='../templates')
+
 # Load the main script as a module
-script_path = Path(__file__).parent / 'prayer-times-ics-generator.py'
-spec = importlib.util.spec_from_file_location('prayer_times_ics_generator', script_path)
+script_path = Path(__file__).parent / 'generator.py'
+spec = importlib.util.spec_from_file_location('generator', script_path)
 prayer_module = importlib.util.module_from_spec(spec)
-sys.modules['prayer_times_ics_generator'] = prayer_module
+sys.modules['generator'] = prayer_module
 spec.loader.exec_module(prayer_module)
 
 # Get the classes we need

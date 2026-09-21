@@ -30,13 +30,13 @@ jobs:
         python -m playwright install chromium --with-deps
     
     - name: Run Ruff linting
-      run: ruff check prayer-times-ics-generator.py
+      run: ruff check src/ main.py
     
     - name: Check Python syntax
-      run: python -m py_compile prayer-times-ics-generator.py
+      run: python -m py_compile main.py
     
     - name: Test help command
-      run: python prayer-times-ics-generator.py --help
+      run: python main.py --help
     
     - name: Test credential extraction
       run: |
@@ -46,10 +46,10 @@ jobs:
         import sys
         from pathlib import Path
 
-        script_path = Path('prayer-times-ics-generator.py')
-        spec = importlib.util.spec_from_file_location('prayer_times_ics_generator', script_path)
+        script_path = Path('src/generator.py')
+        spec = importlib.util.spec_from_file_location('generator', script_path)
         prayer_module = importlib.util.module_from_spec(spec)
-        sys.modules['prayer_times_ics_generator'] = prayer_module
+        sys.modules['generator'] = prayer_module
         spec.loader.exec_module(prayer_module)
 
         async def test():
@@ -68,7 +68,7 @@ jobs:
     
     - name: Test ICS generation
       if: success()
-      run: python prayer-times-ics-generator.py --year 2025 --month 1 --city "Dubai" --emirate "Dubai"
+      run: python main.py --year 2025 --month 1 --city "Dubai" --emirate "Dubai"
     
     - name: Check for security vulnerabilities
       run: |
