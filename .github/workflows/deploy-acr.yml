@@ -45,13 +45,36 @@ jobs:
           docker push ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
           docker push ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:latest
 
-      - name: Deploy to Azure App Service
+      - name: Ensure App Service Plan exists
         run: |
+          az appservice plan show --name "${{ env.APP_NAME }}-plan" --resource-group "${{ env.RESOURCE_GROUP }}" >/dev/null 2>&1 || \
+          az appservice plan create --name "${{ env.APP_NAME }}-plan" --resource-group "${{ env.RESOURCE_GROUP }}" --is-linux --sku B1
+
+      - name: Ensure Web App exists
+        run: |
+          az webapp show --name "${{ env.APP_NAME }}" --resource-group "${{ env.RESOURCE_GROUP }}" >/dev/null 2>&1 || \
+          az webapp create --name "${{ env.APP_NAME }}" --resource-group "${{ env.RESOURCE_GROUP }}" --plan "${{ env.APP_NAME }}-plan" --deployment-container-image-name "mcr.microsoft.com/appsvc/staticsite:latest"
+
+      - name: Configure container image and ACR credentials
+        run: |
+          az acr update --name "${{ env.ACR_NAME }}" --admin-enabled true
+          ACR_USER=$(az acr credential show --name "${{ env.ACR_NAME }}" --query username -o tsv)
+          ACR_PASS=$(az acr credential show --name "${{ env.ACR_NAME }}" --query "passwords[0].value" -o tsv)
+          echo "::add-mask::$ACR_PASS"
           az webapp config container set \
-            --name ${{ env.APP_NAME }} \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --docker-custom-image-name ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }} \
-            --docker-registry-server-url https://${{ env.ACR_NAME }}.azurecr.io
+            --name "${{ env.APP_NAME }}" \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --docker-custom-image-name "${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}" \
+            --docker-registry-server-url "https://${{ env.ACR_NAME }}.azurecr.io" \
+            --docker-registry-server-user "$ACR_USER" \
+            --docker-registry-server-password "$ACR_PASS" > /dev/null
+
+      - name: Configure app settings
+        run: |
+          az webapp config appsettings set \
+            --name "${{ env.APP_NAME }}" \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --settings WEBSITES_PORT=8080 > /dev/null
 
       - name: Restart App Service
         run: |
