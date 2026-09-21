@@ -15,4 +15,4 @@ sys.modules['app'] = app_module
 spec.loader.exec_module(app_module)
 
 if __name__ == '__main__':
-    app_module.app.run(host='0.0.0.0', port=os.environ.get('PORT', 5000))
+    app_module.app.run(host='0.0.0.0', port=os.environ.get('PORT', '5000'))

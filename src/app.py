@@ -142,7 +142,7 @@ def cities(emirate):
 
 if __name__ == '__main__':
     # Use environment variable for port, default to 5000
-    port = int(os.environ.get('PORT', 5000))
+    port = int(os.environ.get('PORT', '5000'))
     # Disable debug mode in production
     debug = os.environ.get('DEBUG', 'False').lower() == 'true'
     app.run(host='0.0.0.0', port=port, debug=debug)
