@@ -8,6 +8,9 @@ import calendar
 import importlib.util
 import os
 import sys
+import time
+import urllib.error
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 
@@ -144,6 +147,26 @@ def cities(emirate):
         return {'cities': cities}
     except Exception as e:  # noqa: BLE001
         return {'error': str(e)}, 500
+
+
+@app.route('/debug/net')
+def debug_net():
+    """Diagnostic endpoint: test connectivity to AWQAF services from this container"""
+    targets = {
+        'website': 'https://www.awqaf.gov.ae',
+        'api': 'https://mobileappapi.awqaf.gov.ae/APIS/v3/prayer-time/EmiratesAndCities?lang=ar',
+    }
+    results = {}
+    for name, url in targets.items():
+        start = time.time()
+        try:
+            code = urllib.request.urlopen(url, timeout=15).status
+            results[name] = f'HTTP {code} in {time.time() - start:.1f}s'
+        except urllib.error.HTTPError as e:
+            results[name] = f'HTTP {e.code} in {time.time() - start:.1f}s'
+        except Exception as e:  # noqa: BLE001
+            results[name] = f'{type(e).__name__}: {e} ({time.time() - start:.1f}s)'
+    return results
 
 
 if __name__ == '__main__':
