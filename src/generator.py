@@ -860,6 +860,61 @@ class CalendarGenerator:
                                self.emirate, self.city, day)
         return os.path.join(self.base_dir, os.path.dirname(rel)), os.path.basename(rel)
     
+    def build(self, day: int | None = None,
+              date_range: tuple | None = None) -> Calendar:
+        """
+        Build the calendar in memory without writing it to disk
+        Args:
+            day: Optional specific day to include
+            date_range: Optional (start, end) date bounds; days outside are skipped
+        Returns:
+            Populated Calendar
+        """
+        cal = self._create_base_calendar()
+
+        # Process each day's prayer times
+        for day_data in self.prayer_data["prayertimes"]:
+            date = day_data["date"]
+            date_obj = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=pytz.timezone(PrayerConfig.TIMEZONE))
+
+            # If specific day is requested, skip other days
+            if day and date_obj.day != day:
+                continue
+
+            if date_range and not (date_range[0] <= date_obj.date() <= date_range[1]):
+                continue
+
+            # Check if this is Friday (weekday 4 in Python)
+            is_friday = date_obj.weekday() == 4  # Monday=0, Friday=4
+
+            # Process each prayer
+            for prayer in ["fajr", "zuhr", "asr", "maghrib", "isha"]:
+                time = day_data["timings"][prayer]
+                if not time:  # Skip if no time available
+                    continue
+
+                try:
+                    # On Friday, replace Zuhr with Jummah
+                    if prayer == "zuhr" and is_friday:
+                        # Create Jummah event instead of Zuhr
+                        jummah_event = self._create_jummah_event(date)
+                        cal.add_component(jummah_event)
+                        continue
+
+                    # Create Adhan event
+                    adhan_event = self._create_adhan_event(date, prayer, time)
+                    cal.add_component(adhan_event)
+
+                    # Create Prayer event
+                    prayer_event = self._create_prayer_event(date, prayer, time, PrayerConfig.ADHAN_DURATIONS[prayer])
+                    cal.add_component(prayer_event)
+
+                except (ValueError, KeyError) as e:
+                    print(f"Error creating events for {date} {prayer}: {e!s}")
+                    continue
+
+        return cal
+
     def generate(self, day: int | None = None) -> str:
         """
         Generate .ics calendar file
@@ -868,48 +923,8 @@ class CalendarGenerator:
         Returns:
             Path to generated calendar file
         """
-        cal = self._create_base_calendar()
-        
-        # Process each day's prayer times
-        for day_data in self.prayer_data["prayertimes"]:
-            date = day_data["date"]
-            
-            # If specific day is requested, skip other days
-            if day:
-                current_day = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=pytz.timezone(PrayerConfig.TIMEZONE)).day
-                if current_day != day:
-                    continue
-            
-            # Check if this is Friday (weekday 4 in Python)
-            date_obj = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=pytz.timezone(PrayerConfig.TIMEZONE))
-            is_friday = date_obj.weekday() == 4  # Monday=0, Friday=4
-            
-            # Process each prayer
-            for prayer in ["fajr", "zuhr", "asr", "maghrib", "isha"]:
-                time = day_data["timings"][prayer]
-                if not time:  # Skip if no time available
-                    continue
-                
-                try:
-                    # On Friday, replace Zuhr with Jummah
-                    if prayer == "zuhr" and is_friday:
-                        # Create Jummah event instead of Zuhr
-                        jummah_event = self._create_jummah_event(date)
-                        cal.add_component(jummah_event)
-                        continue
-                    
-                    # Create Adhan event
-                    adhan_event = self._create_adhan_event(date, prayer, time)
-                    cal.add_component(adhan_event)
-                    
-                    # Create Prayer event
-                    prayer_event = self._create_prayer_event(date, prayer, time, PrayerConfig.ADHAN_DURATIONS[prayer])
-                    cal.add_component(prayer_event)
-                    
-                except (ValueError, KeyError) as e:
-                    print(f"Error creating events for {date} {prayer}: {e!s}")
-                    continue
-        
+        cal = self.build(day)
+
         # Save calendar to file
         output_dir, filename = self._get_output_path(day)
         os.makedirs(output_dir, exist_ok=True)

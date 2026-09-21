@@ -87,18 +87,12 @@
         <div class="details">
             <p><strong>City:</strong> {{ city }}</p>
             <p><strong>Emirate:</strong> {{ emirate }}</p>
-            <p><strong>Period:</strong> {{ month }} {{ year }}</p>
+            <p><strong>Period:</strong> {{ period }}</p>
         </div>
-        
-        {% if day_params %}
-        <a href="{{ url_for('download_day', date=day_params.date, emirate=day_params.emirate, city=day_params.city) }}" class="download-btn">
+
+        <a href="{{ url_for('download_range', start=start, end=end, emirate=emirate, city=city) }}" class="download-btn">
             Download .ics File
         </a>
-        {% else %}
-        <a href="{{ url_for('download', relpath=relpath) }}" class="download-btn">
-            Download .ics File
-        </a>
-        {% endif %}
         
         <br>
         <a href="/" class="new-calendar">Generate Another Calendar</a>

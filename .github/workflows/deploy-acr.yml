@@ -96,9 +96,18 @@ jobs:
             --name "${{ env.APP_NAME }}" \
             --resource-group "${{ env.RESOURCE_GROUP }}" \
             --settings WEBSITES_PORT=8080 STATIC_MODE=true \
+              WEBSITE_WARMUP_PATH=/health WEBSITE_WARMUP_STATUSES=200 \
               APPLICATIONINSIGHTS_CONNECTION_STRING="$AI_CONN" \
               APPINSIGHTS_APP_ID="$AI_APPID" \
               APPINSIGHTS_API_KEY="$AI_KEY" > /dev/null
+
+      - name: Enable App Service Health Check
+        run: |
+          az webapp config set \
+            --name "${{ env.APP_NAME }}" \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --generic-configurations '{"healthCheckPath":"/health"}' \
+            --output none
 
       - name: Restart App Service
         run: |

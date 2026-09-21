@@ -54,7 +54,7 @@ EXPOSE 8080
 
 # Add healthcheck using Python urllib
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/', timeout=5)" || exit 1
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=5)" || exit 1
 
 # Run the Flask web app with gunicorn
 CMD ["gunicorn", "-b", "0.0.0.0:8080", "--timeout", "120", "--workers", "2", "src.app:app"]

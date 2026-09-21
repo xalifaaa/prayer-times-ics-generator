@@ -29,14 +29,17 @@ jobs:
         pip install -r requirements.txt
     
     - name: Run Ruff linting
-      run: ruff check src/ main.py scripts/
+      run: ruff check src/ main.py scripts/ tests/
     
     - name: Check Python syntax
-      run: python -m py_compile main.py src/app.py src/generator.py scripts/pregenerate.py
+      run: python -m py_compile main.py src/app.py src/generator.py scripts/pregenerate.py tests/test_health.py tests/test_ui.py
     
     - name: Test help command
       run: python main.py --help
     
+    - name: Run test suite
+      run: python -m unittest discover -s tests -v
+
     - name: Check for security vulnerabilities
       run: |
         pip install pip-audit

@@ -7,8 +7,10 @@ import asyncio
 import calendar
 import importlib.util
 import io
+import json
 import logging
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -30,6 +32,7 @@ if os.environ.get('APPLICATIONINSIGHTS_CONNECTION_STRING'):
     configure_azure_monitor()
 
 logger = logging.getLogger('prayer-times-app')
+logger.setLevel(logging.INFO)
 
 # Set template folder to absolute path
 # Get the root directory (parent of src/)
@@ -64,6 +67,64 @@ _count_cache = {'value': None, 'fetched_at': 0}
 # Hosted deployments serve pre-generated calendars only; localhost uses the live AWQAF API
 STATIC_MODE = os.environ.get('STATIC_MODE', '').lower() in ('1', 'true', 'yes')
 
+_availability_cache = {}
+
+
+def _load_locations():
+    """Read the committed locations cache; never calls the AWQAF API."""
+    try:
+        data = json.loads((Path(root_dir) / 'locations_cache.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {'emirates': [], 'cities': []}
+    return data if isinstance(data, dict) else {'emirates': [], 'cities': []}
+
+
+def _availability_index():
+    """Map (emirate, city) -> sorted 'YYYY-MM' months with a calendar file on disk."""
+    if 'index' in _availability_cache:
+        return _availability_cache['index']
+    index = {}
+    locations = _load_locations()
+    emirate_names = {e.get('emiratesId'): e.get('emirateNameEn')
+                     for e in locations.get('emirates', [])}
+    pairs = [(emirate_names[c.get('emirate')], c.get('cityNameEn'))
+             for c in locations.get('cities', [])
+             if c.get('cityNameEn') and c.get('emirate') in emirate_names]
+    month_names = list(calendar.month_name)
+    cal_root = Path(root_dir) / 'calendars'
+    if cal_root.is_dir():
+        for year_dir in sorted(cal_root.iterdir()):
+            if not year_dir.is_dir() or not year_dir.name.isdigit():
+                continue
+            for month_dir in year_dir.iterdir():
+                if month_dir.name not in month_names:
+                    continue
+                month = month_names.index(month_dir.name)
+                for emirate, city in pairs:
+                    rel = prayer_module.calendar_relpath(int(year_dir.name), month, emirate, city)
+                    if (cal_root / rel).is_file():
+                        index.setdefault((emirate, city), []).append(f'{year_dir.name}-{month:02d}')
+    _availability_cache['index'] = {key: sorted(months) for key, months in index.items()}
+    return _availability_cache['index']
+
+
+def _month_span(start, end):
+    """Yield (year, month) for every month overlapping [start, end]."""
+    year, month = start.year, start.month
+    while (year, month) <= (end.year, end.month):
+        yield year, month
+        year, month = (year + 1, 1) if month == 12 else (year, month + 1)
+
+
+def _format_date(value):
+    return f'{value.day} {calendar.month_name[value.month]} {value.year}'
+
+
+def _format_period(start, end):
+    if start == end:
+        return _format_date(start)
+    return f'{_format_date(start)} – {_format_date(end)}'
+
 
 @app.after_request
 def track_unique_visitor(response):
@@ -97,17 +158,48 @@ def get_visitor_count():
         return _count_cache['value']
 
 
+def _static_assets_ready():
+    try:
+        root = Path(root_dir)
+        locations = json.loads((root / 'locations_cache.json').read_text(encoding='utf-8'))
+        if not isinstance(locations, dict) or not all(
+            isinstance(locations.get(key), list) and locations[key]
+            for key in ('emirates', 'cities')
+        ):
+            return False
+        calendar_file = next(
+            (path for path in (root / 'calendars').rglob('*.ics') if path.is_file()), None
+        )
+        if calendar_file is None:
+            return False
+        with calendar_file.open('rb') as stream:
+            return stream.readline(64).strip() == b'BEGIN:VCALENDAR'
+    except (OSError, ValueError):
+        return False
+
+
+@app.route('/health', methods=['GET'])
+def health():
+    healthy = not STATIC_MODE or _static_assets_ready()
+    return (
+        {'status': 'healthy' if healthy else 'unhealthy'},
+        200 if healthy else 503,
+        {'Cache-Control': 'no-store'},
+    )
+
+
 @app.route('/')
 def index():
     """Render the main page with the form"""
-    emirates = []
-    
     # Emirates come from the committed locations cache; no credentials needed
-    try:
-        emirates = AWQAFApi.get_emirates() or []
-    except Exception as e:  # noqa: BLE001
-        print(f"Error fetching emirates: {e}")
-        emirates = []
+    if STATIC_MODE:
+        emirates = _load_locations().get('emirates', [])
+    else:
+        try:
+            emirates = AWQAFApi.get_emirates() or []
+        except Exception as e:  # noqa: BLE001
+            print(f"Error fetching emirates: {e}")
+            emirates = []
     
     # If no emirates available, show setup
     if not emirates:
@@ -126,40 +218,48 @@ def generate():
     """Generate prayer times calendar"""
     emirate = request.form.get('emirate')
     city = request.form.get('city')
-    date_str = request.form.get('date')
-    scope = request.form.get('scope', 'month')
+    start_str = request.form.get('start')
+    end_str = (request.form.get('end') or '').strip()
 
-    if not all([emirate, city, date_str]):
+    if not all([emirate, city, start_str]):
         return redirect(url_for('index'))
 
     try:
-        sel = date_cls.fromisoformat(date_str)
-        year, month = sel.year, sel.month
-        day = sel.day if scope == 'day' else None
+        start = date_cls.fromisoformat(start_str)
+        end = date_cls.fromisoformat(end_str) if end_str else start
+    except ValueError:
+        return render_template('error.html', error='Invalid date format.')
 
+    if start > end:
+        return render_template('error.html', error='Start date must be on or before the end date.')
+    if (end - start).days > 365:
+        return render_template('error.html', error='Date range cannot exceed 366 days.')
+
+    try:
         if STATIC_MODE:
-            month_rel = prayer_module.calendar_relpath(year, month, emirate, city)
-            month_path = safe_join(root_dir, os.path.join('calendars', month_rel))
-            if not month_path or not os.path.isfile(month_path):
-                raise FileNotFoundError('Calendar not available for the selected period.')
-            day_params = {'date': date_str, 'emirate': emirate, 'city': city} if day else None
-            relpath = None if day else os.path.join('calendars', month_rel)
-        else:
-            prayer_data = AWQAFApi.fetch_prayer_times(year, month, day, city)
-            filepath = CalendarGenerator(prayer_data, city, emirate, base_dir=root_dir).generate(day)
-            relpath = os.path.relpath(filepath, root_dir)
-            day_params = None
+            months = _availability_index().get((emirate, city), [])
+            covered = set(months)
+            has_data = any(f'{year}-{month:02d}' in covered
+                           for year, month in _month_span(start, end))
+            if not has_data:
+                if months:
+                    first_year, first_month = map(int, months[0].split('-'))
+                    last_year, last_month = map(int, months[-1].split('-'))
+                    last_day = calendar.monthrange(last_year, last_month)[1]
+                    window = _format_period(date_cls(first_year, first_month, 1),
+                                            date_cls(last_year, last_month, last_day))
+                    error = (f'No calendar data is available for {city} in the selected range. '
+                             f'Data is available {window}.')
+                else:
+                    error = f'No calendar data is available for {city}.'
+                return render_template('error.html', error=error)
 
-        if relpath:
-            relpath = relpath.replace(os.sep, '/')
         return render_template('success.html',
-                             relpath=relpath,
-                             day_params=day_params,
-                             filename=os.path.basename(relpath) if relpath else f'{date_str}.ics',
-                             city=city,
-                             emirate=emirate,
-                             year=year,
-                             month=calendar.month_name[month])
+                               emirate=emirate,
+                               city=city,
+                               start=start.isoformat(),
+                               end=end.isoformat(),
+                               period=_format_period(start, end))
 
     except Exception as e:  # noqa: BLE001
         return render_template('error.html', error=str(e))
@@ -186,7 +286,7 @@ def download_day(date, emirate, city):
     except ValueError:
         return "Invalid date", 400
     rel = prayer_module.calendar_relpath(sel.year, sel.month, emirate, city)
-    filepath = safe_join(root_dir, os.path.join('calendars', rel))
+    filepath = safe_join(root_dir, 'calendars', *rel.split(os.sep))
     if not filepath or not os.path.isfile(filepath):
         return "File not found", 404
 
@@ -202,6 +302,78 @@ def download_day(date, emirate, city):
     return send_file(io.BytesIO(out.to_ical()), as_attachment=True,
                      download_name=f"{sel.day:02d}{calendar.month_name[sel.month]}.ics",
                      mimetype='text/calendar')
+
+
+def _merged_static_range(start, end, emirate, city):
+    """Merge in-range VEVENTs from monthly calendar files into one Calendar."""
+    from icalendar import Calendar
+
+    merged = None
+    events = 0
+    for year, month in _month_span(start, end):
+        rel = prayer_module.calendar_relpath(year, month, emirate, city)
+        path = safe_join(root_dir, 'calendars', *rel.split(os.sep))
+        if not path or not os.path.isfile(path):
+            continue
+        source = Calendar.from_ical(Path(path).read_bytes())
+        if merged is None:
+            merged = Calendar()
+            for key, val in source.items():
+                merged.add(key, val)
+        for comp in source.walk('VEVENT'):
+            dt = comp.decoded('dtstart')
+            event_date = dt.date() if hasattr(dt, 'date') else dt
+            if start <= event_date <= end:
+                merged.add_component(comp)
+                events += 1
+    return merged, events
+
+
+def _live_range_calendar(start, end, emirate, city):
+    """Build a range calendar from one AWQAF API response, in memory."""
+    data = AWQAFApi._request_prayer_data(start.isoformat(), end.isoformat())
+    prayertimes = []
+    for item in data.get('prayerData', []):
+        if item.get('areaNameEn', '').lower() != city.lower():
+            continue
+        formatted = AWQAFApi._format_prayer_item(item)
+        if formatted:
+            prayertimes.append(formatted)
+    if not prayertimes:
+        return None
+    return CalendarGenerator({'prayertimes': prayertimes}, city, emirate,
+                             base_dir=root_dir).build(date_range=(start, end))
+
+
+@app.route('/download/range/<start>/<end>/<emirate>/<city>')
+def download_range(start, end, emirate, city):
+    """Serve one merged calendar covering an arbitrary date range."""
+    try:
+        start_date = date_cls.fromisoformat(start)
+        end_date = date_cls.fromisoformat(end)
+    except ValueError:
+        return "Invalid date", 400
+    if start_date > end_date:
+        return "Invalid date range", 400
+    if (end_date - start_date).days > 365:
+        return "Date range cannot exceed 366 days", 400
+
+    if STATIC_MODE:
+        cal, event_count = _merged_static_range(start_date, end_date, emirate, city)
+        if not event_count:
+            return "File not found", 404
+    else:
+        try:
+            cal = _live_range_calendar(start_date, end_date, emirate, city)
+        except Exception as e:  # noqa: BLE001
+            return f"Failed to fetch prayer times: {e}", 502
+        if cal is None:
+            return "File not found", 404
+
+    safe_city = re.sub(r'[^A-Za-z0-9_-]+', '_', city)
+    filename = f'PrayerTimes_{safe_city}_{start}_to_{end}.ics'
+    return send_file(io.BytesIO(cal.to_ical()), as_attachment=True,
+                     download_name=filename, mimetype='text/calendar')
 
 
 @app.route('/setup', methods=['GET', 'POST'])
@@ -233,6 +405,63 @@ def cities(emirate):
         return {'cities': cities}
     except Exception as e:  # noqa: BLE001
         return {'error': str(e)}, 500
+
+
+@app.route('/api/locations')
+def api_locations():
+    """Emirates and cities with coordinates for the map selector."""
+    locations = _load_locations()
+    emirate_names = {e.get('emiratesId'): e.get('emirateNameEn')
+                     for e in locations.get('emirates', [])}
+    availability = _availability_index() if STATIC_MODE else {}
+    cities = []
+    for city in locations.get('cities', []):
+        if city.get('enabled') is False:
+            continue
+        lat, lon = city.get('latitude'), city.get('longitude')
+        if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
+            continue
+        emirate = emirate_names.get(city.get('emirate'))
+        name = city.get('cityNameEn')
+        if not emirate or not name:
+            continue
+        cities.append({
+            'id': city.get('cityID'),
+            'emirate_id': city.get('emirate'),
+            'emirate': emirate,
+            'name': name,
+            'lat': lat,
+            'lon': lon,
+            'available': bool(availability.get((emirate, name))) if STATIC_MODE else True,
+        })
+    emirates = [{'id': e.get('emiratesId'), 'name': e.get('emirateNameEn')}
+                for e in locations.get('emirates', [])
+                if e.get('emiratesId') is not None and e.get('emirateNameEn')]
+    return {'emirates': emirates, 'cities': cities}
+
+
+@app.route('/api/availability')
+def api_availability():
+    """Months with pre-generated data for a city, plus the usable date window."""
+    if not STATIC_MODE:
+        return {'static': False, 'months': None, 'min': None, 'max': None}
+    emirate = request.args.get('emirate', '')
+    city = request.args.get('city', '')
+    if city:
+        months = _availability_index().get((emirate, city), [])
+    else:
+        months = sorted({month for city_months in _availability_index().values()
+                         for month in city_months})
+    if not months:
+        return {'static': True, 'months': [], 'min': None, 'max': None}
+    last_year, last_month = map(int, months[-1].split('-'))
+    last_day = calendar.monthrange(last_year, last_month)[1]
+    return {
+        'static': True,
+        'months': months,
+        'min': f'{months[0]}-01',
+        'max': f'{months[-1]}-{last_day:02d}',
+    }
 
 
 @app.route('/api/visitors')

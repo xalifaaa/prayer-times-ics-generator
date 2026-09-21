@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>UAE Prayer Times Calendar Generator</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
     <style>
         * {
             margin: 0;
@@ -19,7 +20,7 @@
         }
         
         .container {
-            max-width: 600px;
+            max-width: 680px;
             margin: 0 auto;
             background: white;
             border-radius: 16px;
@@ -45,7 +46,7 @@
             margin-bottom: 20px;
         }
         
-        label {
+        label, .field-label {
             display: block;
             margin-bottom: 8px;
             color: #333;
@@ -53,7 +54,7 @@
             font-size: 14px;
         }
         
-        select, input[type="date"] {
+        select, input[type="date"], input[type="text"] {
             width: 100%;
             padding: 12px;
             border: 2px solid #e0e0e0;
@@ -61,28 +62,105 @@
             font-size: 16px;
             background: white;
             transition: border-color 0.3s;
+            min-height: 44px;
         }
         
-        select:focus, input[type="date"]:focus {
+        select:focus, input[type="date"]:focus, input[type="text"]:focus {
             outline: none;
             border-color: #667eea;
         }
-        
-        .scope-toggle {
-            display: flex;
-            gap: 20px;
+
+        #map {
+            width: 100%;
+            height: 320px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            background: #f4f6fb;
         }
-        
-        .scope-toggle label {
+
+        .map-message {
             display: flex;
             align-items: center;
-            gap: 6px;
-            font-weight: 400;
-            cursor: pointer;
+            justify-content: center;
+            height: 100%;
+            padding: 20px;
+            color: #666;
+            font-size: 14px;
+            text-align: center;
         }
-        
-        .scope-toggle input[type="radio"] {
-            accent-color: #667eea;
+
+        .selected-location {
+            margin-top: 10px;
+            min-height: 20px;
+            color: #333;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .list-fallback {
+            margin-top: 12px;
+        }
+
+        .list-fallback summary {
+            display: flex;
+            align-items: center;
+            min-height: 44px;
+            color: #667eea;
+            font-size: 14px;
+            cursor: pointer;
+            touch-action: manipulation;
+        }
+
+        #city-filter {
+            margin: 10px 0;
+        }
+
+        .date-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 12px;
+        }
+
+        .availability-hint {
+            margin-top: 8px;
+            min-height: 16px;
+            color: #666;
+            font-size: 13px;
+        }
+
+        .presets {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .preset-btn {
+            width: auto;
+            flex: 1 1 0;
+            min-width: 100px;
+            min-height: 44px;
+            padding: 10px 12px;
+            background: #eef0fb;
+            color: #4a54a3;
+            font-size: 14px;
+            touch-action: manipulation;
+        }
+
+        .preset-btn:hover {
+            box-shadow: 0 4px 10px rgba(102, 126, 234, 0.25);
+        }
+
+        @media (min-width: 480px) {
+            .date-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        @media (max-width: 480px) {
+            #map {
+                height: 240px;
+            }
         }
         
         button {
@@ -96,6 +174,7 @@
             font-weight: 600;
             cursor: pointer;
             transition: transform 0.2s, box-shadow 0.2s;
+            min-height: 44px;
         }
         
         button:hover {
@@ -145,32 +224,51 @@
         <h1>🕌 UAE Prayer Times</h1>
         <p class="subtitle">Generate your prayer times calendar (.ics file)</p>
         
-        <form method="POST" action="/generate">
+        <form method="POST" action="/generate" id="generate-form">
             <div class="form-group">
-                <label for="emirate">Emirate</label>
-                <select id="emirate" name="emirate" required onchange="loadCities()">
-                    <option value="">Select an emirate</option>
-                    {% for emirate in emirates %}
-                    <option value="{{ emirate.emirateNameEn }}">{{ emirate.emirateNameEn }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            
-            <div class="form-group">
-                <label for="city">City</label>
-                <select id="city" name="city" required disabled>
-                    <option value="">Select an emirate first</option>
-                </select>
-            </div>
-            
-            <div class="form-group">
-                <label for="date">Date</label>
-                <input type="date" id="date" name="date" value="{{ today }}" required>
+                <span class="field-label" id="location-label">Location</span>
+                <div id="map" role="application" aria-labelledby="location-label"></div>
+                <div class="selected-location" id="selected-location" aria-live="polite">No location selected</div>
+                <input type="hidden" id="emirate" name="emirate">
+                <input type="hidden" id="city" name="city">
+                <details class="list-fallback" id="list-fallback">
+                    <summary>Choose from a list instead</summary>
+                    <input type="text" id="city-filter" placeholder="Filter cities…" aria-label="Filter cities">
+                    <div class="form-group">
+                        <label for="emirate-select">Emirate</label>
+                        <select id="emirate-select">
+                            <option value="">Select an emirate</option>
+                            {% for emirate in emirates %}
+                            <option value="{{ emirate.emirateNameEn }}">{{ emirate.emirateNameEn }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="city-select">City</label>
+                        <select id="city-select" disabled>
+                            <option value="">Select an emirate first</option>
+                        </select>
+                    </div>
+                </details>
             </div>
 
-            <div class="form-group scope-toggle">
-                <label><input type="radio" name="scope" value="month" checked> Whole month</label>
-                <label><input type="radio" name="scope" value="day"> Single day</label>
+            <div class="form-group">
+                <div class="date-grid">
+                    <div>
+                        <label for="start">Start</label>
+                        <input type="date" id="start" name="start" value="{{ today }}" required>
+                    </div>
+                    <div>
+                        <label for="end">End</label>
+                        <input type="date" id="end" name="end" value="{{ today }}" required>
+                    </div>
+                </div>
+                <div class="availability-hint" id="availability-hint"></div>
+                <div class="presets">
+                    <button type="button" class="preset-btn" data-preset="month">This month</button>
+                    <button type="button" class="preset-btn" data-preset="30days">Next 30 days</button>
+                    <button type="button" class="preset-btn" data-preset="day">Single day</button>
+                </div>
             </div>
 
             <button type="submit">Generate Calendar</button>
@@ -189,43 +287,272 @@
         <div class="visitors" id="visitor-count"></div>
     </div>
     
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <script>
-        function loadCities() {
-            const emirate = document.getElementById('emirate').value;
-            const citySelect = document.getElementById('city');
-            
-            if (!emirate) {
-                citySelect.disabled = true;
-                citySelect.innerHTML = '<option value="">Select an emirate first</option>';
+        const STATIC_MODE = '{{ "true" if static_mode else "false" }}' === 'true';
+        const TODAY = '{{ today }}';
+        const MONTH_NAMES = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+            'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const locationsData = { emirates: [], cities: [] };
+        const markers = new Map();
+        let map = null;
+        let availMin = null;
+        let availMax = null;
+
+        const startInput = document.getElementById('start');
+        const endInput = document.getElementById('end');
+        const emirateInput = document.getElementById('emirate');
+        const cityInput = document.getElementById('city');
+        const emirateSelect = document.getElementById('emirate-select');
+        const citySelect = document.getElementById('city-select');
+        const cityFilter = document.getElementById('city-filter');
+
+        function markerKey(emirate, city) {
+            return emirate + '|' + city;
+        }
+
+        function markerStyle(state) {
+            if (state === 'selected') {
+                return { radius: 10, color: '#ffffff', weight: 2,
+                         fillColor: '#ba1e55', fillOpacity: 0.95 };
+            }
+            if (state === 'disabled') {
+                return { radius: 6, color: '#ffffff', weight: 1,
+                         fillColor: '#9a9a9a', fillOpacity: 0.35 };
+            }
+            return { radius: 8, color: '#ffffff', weight: 2,
+                     fillColor: '#667eea', fillOpacity: 0.75 };
+        }
+
+        function popupContent(city) {
+            const div = document.createElement('div');
+            const name = document.createElement('strong');
+            name.textContent = city.name + ', ' + city.emirate;
+            div.appendChild(name);
+            if (!city.available) {
+                div.appendChild(document.createElement('br'));
+                div.appendChild(document.createTextNode('No data available'));
+            }
+            return div;
+        }
+
+        function showMapFallback() {
+            const mapEl = document.getElementById('map');
+            mapEl.innerHTML = '';
+            const msg = document.createElement('div');
+            msg.className = 'map-message';
+            msg.textContent = 'Map unavailable — choose your location from the list below.';
+            mapEl.appendChild(msg);
+            document.getElementById('list-fallback').open = true;
+        }
+
+        function initMap() {
+            if (!window.L) {
+                showMapFallback();
                 return;
             }
-            
-            citySelect.disabled = true;
-            citySelect.innerHTML = '<option value="">Loading...</option>';
-            
-            fetch(`/cities/${emirate}`)
+            try {
+                map = L.map('map').setView([24.3, 54.0], 7);
+                L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 19,
+                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                }).addTo(map);
+                const bounds = [];
+                locationsData.cities.forEach(city => {
+                    const marker = L.circleMarker([city.lat, city.lon],
+                        markerStyle(city.available ? 'normal' : 'disabled'));
+                    marker.bindPopup(popupContent(city));
+                    marker.on('click', () => {
+                        if (city.available) {
+                            selectCity(city.emirate, city.name, 'map');
+                        }
+                    });
+                    marker.addTo(map);
+                    markers.set(markerKey(city.emirate, city.name), { marker, city });
+                    bounds.push([city.lat, city.lon]);
+                });
+                if (bounds.length) {
+                    map.fitBounds(bounds, { padding: [20, 20] });
+                }
+            } catch (e) {
+                showMapFallback();
+            }
+        }
+
+        function populateCitySelect() {
+            const emirate = emirateSelect.value;
+            const filter = cityFilter.value.trim().toLowerCase();
+            citySelect.innerHTML = '';
+            const list = locationsData.cities.filter(c =>
+                (!emirate || c.emirate === emirate) &&
+                (!filter || c.name.toLowerCase().includes(filter)));
+            if (!emirate && !filter) {
+                citySelect.disabled = true;
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = 'Select an emirate first';
+                citySelect.appendChild(opt);
+                return;
+            }
+            citySelect.disabled = false;
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = list.length ? 'Select a city' : 'No matching cities';
+            citySelect.appendChild(placeholder);
+            list.forEach(city => {
+                const opt = document.createElement('option');
+                opt.value = city.name;
+                opt.dataset.emirate = city.emirate;
+                opt.textContent = city.available ? city.name : city.name + ' (no data)';
+                opt.disabled = !city.available;
+                citySelect.appendChild(opt);
+            });
+        }
+
+        function fmtDate(iso) {
+            const [y, m, d] = iso.split('-').map(Number);
+            return d + ' ' + MONTH_NAMES[m] + ' ' + y;
+        }
+
+        function clamp(value, min, max) {
+            if (min && value < min) return min;
+            if (max && value > max) return max;
+            return value;
+        }
+
+        function clampDates() {
+            startInput.value = clamp(startInput.value || TODAY, availMin, availMax);
+            endInput.value = clamp(endInput.value || startInput.value, availMin, availMax);
+            if (endInput.value < startInput.value) {
+                endInput.value = startInput.value;
+            }
+        }
+
+        function setAvailabilityBounds(min, max, hint) {
+            availMin = min;
+            availMax = max;
+            startInput.min = min || '';
+            startInput.max = max || '';
+            endInput.min = min || '';
+            endInput.max = max || '';
+            document.getElementById('availability-hint').textContent = hint;
+            clampDates();
+        }
+
+        function loadAvailability(emirate, city) {
+            if (!STATIC_MODE) {
+                setAvailabilityBounds(null, null, '');
+                return;
+            }
+            const query = city
+                ? '?emirate=' + encodeURIComponent(emirate) +
+                  '&city=' + encodeURIComponent(city)
+                : '';
+            fetch('/api/availability' + query)
                 .then(response => response.json())
                 .then(data => {
-                    citySelect.disabled = false;
-                    citySelect.innerHTML = '<option value="">Select a city</option>';
-                    
-                    if (data.cities && data.cities.length > 0) {
-                        data.cities.forEach(city => {
-                            const option = document.createElement('option');
-                            option.value = city.cityNameEn;
-                            option.textContent = city.cityNameEn;
-                            citySelect.appendChild(option);
-                        });
+                    if (data.static && data.min && data.max) {
+                        setAvailabilityBounds(data.min, data.max,
+                            'Data available ' + fmtDate(data.min) + ' – ' + fmtDate(data.max));
                     } else {
-                        citySelect.innerHTML = '<option value="">No cities found</option>';
+                        setAvailabilityBounds(null, null, city
+                            ? 'No data available for this city.'
+                            : 'No data available yet.');
                     }
                 })
-                .catch(error => {
-                    citySelect.disabled = false;
-                    citySelect.innerHTML = '<option value="">Error loading cities</option>';
-                    console.error('Error:', error);
-                });
+                .catch(() => setAvailabilityBounds(null, null, ''));
         }
+
+        function selectCity(emirate, city, source) {
+            emirateInput.value = emirate;
+            cityInput.value = city;
+            document.getElementById('selected-location').textContent =
+                'Selected: ' + city + ', ' + emirate;
+
+            if (emirateSelect.value !== emirate) {
+                emirateSelect.value = emirate;
+            }
+            populateCitySelect();
+            citySelect.value = city;
+
+            markers.forEach((entry, key) => {
+                entry.marker.setStyle(markerStyle(
+                    key === markerKey(emirate, city) ? 'selected'
+                        : entry.city.available ? 'normal' : 'disabled'));
+            });
+            const entry = markers.get(markerKey(emirate, city));
+            if (map && entry && source !== 'map') {
+                map.setView([entry.city.lat, entry.city.lon], 10);
+                entry.marker.openPopup();
+            }
+            loadAvailability(emirate, city);
+        }
+
+        function addDays(iso, days) {
+            const [y, m, d] = iso.split('-').map(Number);
+            const dt = new Date(Date.UTC(y, m - 1, d + days));
+            return dt.toISOString().slice(0, 10);
+        }
+
+        function applyPreset(kind) {
+            const base = clamp(startInput.value || TODAY, availMin, availMax);
+            let start = base;
+            let end = base;
+            if (kind === 'month') {
+                start = base.slice(0, 8) + '01';
+                end = addDays(addDays(start.slice(0, 7) + '-01', 32).slice(0, 7) + '-01', -1);
+            } else if (kind === '30days') {
+                end = addDays(base, 30);
+            }
+            start = clamp(start, availMin, availMax);
+            end = clamp(end, availMin, availMax);
+            if (end < start) end = start;
+            startInput.value = start;
+            endInput.value = end;
+        }
+
+        emirateSelect.addEventListener('change', populateCitySelect);
+        cityFilter.addEventListener('input', populateCitySelect);
+        citySelect.addEventListener('change', () => {
+            const opt = citySelect.selectedOptions[0];
+            if (opt && opt.value) {
+                selectCity(opt.dataset.emirate || emirateSelect.value, opt.value, 'list');
+            }
+        });
+        startInput.addEventListener('change', () => {
+            startInput.value = clamp(startInput.value, availMin, availMax);
+            if (endInput.value < startInput.value) {
+                endInput.value = startInput.value;
+            }
+        });
+        endInput.addEventListener('change', () => {
+            endInput.value = clamp(endInput.value, availMin, availMax);
+            if (endInput.value < startInput.value) {
+                endInput.value = startInput.value;
+            }
+        });
+        document.querySelectorAll('.preset-btn').forEach(btn => {
+            btn.addEventListener('click', () => applyPreset(btn.dataset.preset));
+        });
+        document.getElementById('generate-form').addEventListener('submit', event => {
+            if (!emirateInput.value || !cityInput.value) {
+                event.preventDefault();
+                document.getElementById('selected-location').textContent =
+                    'Please choose a location on the map or from the list.';
+                document.getElementById('list-fallback').open = true;
+            }
+        });
+
+        loadAvailability();
+
+        fetch('/api/locations')
+            .then(response => response.json())
+            .then(data => {
+                locationsData.emirates = data.emirates || [];
+                locationsData.cities = data.cities || [];
+                initMap();
+            })
+            .catch(() => showMapFallback());
 
         fetch('/api/visitors')
             .then(response => response.json())
