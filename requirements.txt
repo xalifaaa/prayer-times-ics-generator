@@ -3,3 +3,4 @@ pytz>=2023.3
 icalendar>=5.0.7
 playwright>=1.40.0
 flask>=3.0.0
+gunicorn>=21.0.0
