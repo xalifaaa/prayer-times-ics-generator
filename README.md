@@ -1,6 +1,6 @@
 # UAE Prayer Times Calendar Events Generator
 
-![Working Status](https://github.com/xalifaaa/prayer-times-ics-generator/workflows/working/badge.svg)
+![Working Status](https://github.com/xalifaaa/prayer-times-ics-generator/actions/workflows/working.yml/badge.svg)
 
 A Python application that generates a **single `.ics` file** on a day or month basis with prayer times **fetched from the official UAE AWQAF Prayer Time and Locations API.** This single-setup, hassle-free solution allows Muslims in the UAE to **seamlessly import all adhan-to-iqamah and prayer time events** into their calendars with just **one** `.ics` file.
 
