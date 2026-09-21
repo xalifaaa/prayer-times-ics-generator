@@ -8,13 +8,14 @@ The `.ics` file is compatible with popular calendar platforms such as **Google C
 
 ## Core Features
 
-- One-time setup and easy configuration
-- Generates adhan-to-iqamah and prayer time calendar events in `.ics` format to import into any commercially available calendar
-- Uses official UAE AWQAF Prayer Times API for accurate prayer times
-- Supports all seven emirates and sixty cities in the UAE
-- Configurable Adhan and prayer duration times
-- Color-coded events for Adhan and Prayer times
-- Automatic authorization token refresh handling
+- **Guided Setup** - Interactive setup with automatic credential extraction from the AWQAF website
+- **Smart Defaults** - Defaults to current month and year, with saved location preferences
+- **Comprehensive Location Support** - Supports all 7 emirates and 60+ cities in the UAE
+- **Automated Credential Extraction** - Uses Playwright to extract API tokens automatically
+- **Dual Credential Support** - Handles both traditional client credentials and direct API tokens
+- **Configurable Prayer Durations** - Customizable adhan and prayer duration times
+- **Color-coded Events** - Green for Adhan, Cerise for Prayer times
+- **Automatic Token Management** - Handles authorization token refresh when needed
 
 ## Installation
 
@@ -30,64 +31,68 @@ cd prayer-times-ics-generator
 pip install -r requirements.txt
 ```
 
-3. Rename [config-example.json](config-example.json) to `config.json` and follow the instructions in the **Setup** section to set up UAE AWQAF API credentials:
-```json
-{
-    "clientGuid": "your_client_guid",
-    "clientSecret": "your_client_secret"
-}
+3. Run the guided setup:
+```bash
+python prayer-times-ics-generator.py --setup
 ```
 
-4. Rename [auth_token-example.json](auth_token-example.json) to `auth_token.json` in the project root for the program to store the authentication token:
-```json
-{
-    "clientAccessToken": "your_Access_Token",
-    "clientRefreshToken": "your_Refresh_Token",
-    "refreshTokenExpiryTime": null
-}
-```
+The guided setup will:
+- Automatically extract API credentials from the AWQAF website using Playwright
+- Save browser context and tokens for legitimate API access (v3 API)
+- Let you select your preferred emirate and city from available options (7 emirates, 60+ cities)
+- Set up default preferences for easy future use
 
-**Important**: Keep your `config.json` and `auth_token.json` files secure and never commit it to version control.
+**Note:** The AWQAF API has moved to v3 endpoints. The automated extraction is designed to work with the current API structure and saves both tokens and browser context for legitimate API access.
 
-## Setup Guide
-
-Follow the steps below to locate your `clientGUID` and `clientSecret` and start using the script: 
-1. Visit https://www.awqaf.gov.ae.
-2. Clear your browser cookies.
-3. Open the Developer Tools (Ctrl+Shift+I or F12).
-4. Navigate to the **Network** tab.
-5. Refresh the page.
-6. Filter by **JSON** or **XHR**, depending on your browser.
-7. Look for `mobileappapi.awqaf.gov.ae` in the **Domain** column.
-8. Find the JSON file with today’s date and click on it.
-9. Under the **Request Headers** section, locate the `Authorization: Bearer:` field and note down the last 6 characters of its value.
-10. Search through the **Response** tab of every JSON file labeled `ClientAuthorization` to find the `clientAccessToken` that matches the last 6 characters you noted.
-11. Once you find the matching `ClientAuthorization` JSON file, copy the `clientGUID` and `clientSecret` values from the **Request** tab and paste them into the `config.json` file.
-12. Save the `config.json` file.
-
-After completing the setup, proceed to the **Usage** section below to begin using the script.
-
-### Video tutorial:
-
-> **Work in progress**
+**Important**: Keep your `config.json` and `browser_context.json` files secure and never commit them to version control. The `.gitignore` file is configured to exclude these sensitive files.
 
 ## Usage
 
-Run the script with the following command:
+### First Time Setup
+
+Run the guided setup for easy configuration:
 ```bash
-python prayer-times-ics-generator.py --year 2025 --month 1 --city "Abu Dhabi" --emirate "Abu Dhabi"
+python prayer-times-ics-generator.py --setup
+```
+
+### Generating Calendars
+
+After setup, you can generate calendars using the simple command:
+```bash
+python prayer-times-ics-generator.py
+```
+
+This will generate a calendar for the current month and year using your default location.
+
+### Advanced Usage
+
+You can override defaults or specify different options:
+
+```bash
+# Generate for specific location
+python prayer-times-ics-generator.py --city "Abu Dhabi" --emirate "Abu Dhabi"
+
+# Generate for specific time period
+python prayer-times-ics-generator.py --year 2026 --month 10
+
+# Generate for a specific day
+python prayer-times-ics-generator.py --day 15
+
+# Combine options
+python prayer-times-ics-generator.py --city "Sharjah" --emirate "Sharjah" --year 2026 --month 12
 ```
 
 ### Command Line Arguments
 
-- `--year`: Year to generate calendar for (required)
-- `--month`: Month to generate calendar for (required)
-- `--city`: City name (required)
-- `--emirate`: Emirate name (required)
+- `--setup`: Run guided setup for first-time users
+- `--city`: City name (overrides default from setup)
+- `--emirate`: Emirate name (overrides default from setup)
+- `--year`: Year (default: current year)
+- `--month`: Month number (1-12, default: current month)
 - `--day`: Specific day (optional)
 - `--list-emirates`: List all available emirates
 - `--list-cities`: List all cities in the specified emirate
-- `--help`: Show help message
+- `--show-help`: Show detailed help message
 
 ### Listing Emirates and Cities
 
@@ -134,7 +139,7 @@ ADHAN_DURATIONS = {
     "fajr": 25,
     "zuhr": 20,
     "asr": 20,
-    "maghrib": 5,
+    "maghrib: 5,
     "isha": 20
 }
 
@@ -152,22 +157,22 @@ PRAYER_COLOR = "#ba1e55"  # Cerise
 ## Output
 
 The script generates .ics files in the following format:
-### Monthly calendar: 
->year\\month\\emirate\\city\\[Month][Year].ics
 
-### Example: 
->2025\August\Dubai\Dubai\January2025.ics
+### Monthly calendar:
+`year/month/emirate/city/[Month][Year].ics`
 
+### Example:
+`2026/September/Abu Dhabi/September2026.ics`
 
-### Daily calendar: 
->year\\month\\emirate\\city\\day\\prayer-times-[Day][Month].ics
+### Daily calendar:
+`year/month/emirate/city/Day/day-[Day][Month].ics`
 
-### Example: 
->2025\August\Dubai\Dubai\prayer-times-01August.ics
+### Example:
+`2026/September/Abu Dhabi/Day/15-September.ics`
 
 ## Security
 
-- **Important**: Never commit your `config.json` or `auth_token.json` files to version control and keep your client credentials secure
+- **Important**: Never commit your `config.json` or `browser_context.json` files to version control and keep your credentials secure
 - The `.gitignore` file is configured to exclude sensitive files
 
 ## Contributing

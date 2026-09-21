@@ -5,34 +5,210 @@ Generates .ics calendar files for prayer times using the official UAE AWQAF Pray
 """
 
 import argparse
+import asyncio
+import calendar
 import hashlib
 import json
 import os
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional, List, Tuple
-import calendar
+from typing import Any, ClassVar
+from urllib.parse import parse_qs, urlparse
 
 import pytz
 import requests
-from icalendar import Calendar, Event, Alarm
+from icalendar import Alarm, Calendar, Event
+from playwright.async_api import async_playwright
+
+
+class APIError(Exception):
+    """Exception raised for API-related errors."""
+
+# Extracted credential extraction functionality
+SITE = "https://www.awqaf.gov.ae"
+API_HOST = "mobileappapi.awqaf.gov.ae"
+CONFIG_FILE = "config.json"
+CONTEXT_FILE = "browser_context.json"
+SETTLE_MS = 10000
+HEADLESS = True
+
+
+def walk(obj, key):
+    """Recursively collect every value stored under `key` in nested dicts/lists."""
+    hits = []
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if k == key:
+                hits.append(v)
+            hits.extend(walk(v, key))
+    elif isinstance(obj, list):
+        for item in obj:
+            hits.extend(walk(item, key))
+    return hits
+
+
+def extract_pair(req):
+    """Pull clientGUID / clientSecret out of a request (POST body or query string)."""
+    try:
+        pdata = req.post_data_json or {}
+    except (AttributeError, ValueError):
+        pdata = {}
+    
+    guids = walk(pdata, "clientGUID")
+    secrets = walk(pdata, "clientSecret")
+    
+    if not (guids and secrets):
+        qs = parse_qs(urlparse(req.url).query)
+        guids = guids or qs.get("clientGUID", [])
+        secrets = secrets or qs.get("clientSecret", [])
+    
+    if guids and secrets:
+        return guids[0], secrets[0]
+    
+    return None
+
+
+def resolve(bearer_tokens, candidates):
+    """Extract tokens from the authentication response."""
+    for tokens, req, body in candidates:
+        if body and isinstance(body, dict) and 'clientAccessToken' in body and 'clientRefreshToken' in body:
+            return {
+                'clientAccessToken': body['clientAccessToken'],
+                'clientRefreshToken': body['clientRefreshToken'],
+                'refreshTokenExpiryTime': body.get('refreshTokenExpiryTime')
+            }
+    
+    return None
+
+
+def save_config(creds):
+    """Save credentials to config file."""
+    config = {}
+    try:
+        with open(CONFIG_FILE) as fh:
+            config = json.load(fh)
+    except (OSError, ValueError):
+        pass
+    config.update(creds)
+    with open(CONFIG_FILE, "w") as fh:
+        json.dump(config, fh, indent=2)
+
+
+async def extract_credentials():
+    """Extract credentials from AWQAF website using Playwright."""
+    bearer_tokens = []
+    candidates = []
+    credentials = None
+
+    print(f"Launching browser (headless={HEADLESS})...")
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=HEADLESS)
+        context = await browser.new_context()
+        page = await context.new_page()
+
+        async def on_response(response):
+            nonlocal credentials
+            req = response.request
+            if API_HOST not in response.url and API_HOST not in req.url:
+                return
+
+            try:
+                headers = await req.all_headers()
+            except (AttributeError, RuntimeError):
+                headers = {}
+            auth = headers.get("authorization", "")
+            if auth.lower().startswith("bearer "):
+                bearer_tokens.append(auth.split(None, 1)[1].strip())
+
+            try:
+                body = await response.json()
+            except (AttributeError, ValueError):
+                return
+            
+            tokens = walk(body, "clientAccessToken")
+            if tokens:
+                candidates.append((tokens, req, body))
+            
+            pair = extract_pair(req)
+            if pair and not credentials:
+                credentials = pair
+
+        page.on("response", on_response)
+        print(f"Navigating to {SITE}...")
+        await page.goto(SITE, wait_until="domcontentloaded", timeout=60000)
+        print("Waiting for network to settle...")
+        await page.wait_for_load_state("networkidle")
+        print(f"Waiting {SETTLE_MS/1000}s for late XHRs...")
+        await page.wait_for_timeout(SETTLE_MS)
+
+        if not candidates:
+            print("No auth exchange found, reloading page...")
+            await page.reload(wait_until="domcontentloaded")
+            await page.wait_for_load_state("networkidle")
+            print(f"Waiting {SETTLE_MS/1000}s for late XHRs...")
+            await page.wait_for_timeout(SETTLE_MS)
+
+        print("Saving browser context...")
+        await context.storage_state(path=CONTEXT_FILE)
+
+        print("Closing browser...")
+        await context.close()
+        await browser.close()
+
+    print("\nHarvest complete:")
+    print(f"  Bearer tokens seen:               {len(bearer_tokens)}")
+    print(f"  ClientAuthorization exchanges:    {len(candidates)}")
+    print(f"  Client credentials found:        {'Yes' if credentials else 'No'}")
+
+    if credentials:
+        print("Using client credentials from request")
+        creds = {"clientGUID": credentials[0], "clientSecret": credentials[1]}
+    else:
+        print("Using tokens from response")
+        creds = resolve(bearer_tokens, candidates)
+        if not creds:
+            print("\nNo credentials or tokens found.")
+            print("Suggestions:")
+            print("  1. Try setting HEADLESS = False in the script")
+            print("  2. Increase SETTLE_MS if the site is slow")
+            print("  3. Check if the site structure has changed")
+            return None
+
+    save_config(creds)
+    masked = {
+        k: (v[:4] + "..." + v[-4:]) if isinstance(v, str) and len(v) > 8 else "***"
+        for k, v in creds.items()
+    }
+    print(f"\n[OK] Successfully wrote {CONFIG_FILE}: {masked}")
+    print(f"[OK] Saved browser context to {CONTEXT_FILE}")
+    
+    return creds
+
+
+class ConfigError(Exception):
+    """Exception raised for configuration errors."""
+
+
+class TokenError(Exception):
+    """Exception raised for token-related errors."""
+
 
 class PrayerConfig:
     """Configuration class for prayer times and calendar settings"""
-    TIMEZONE = "Asia/Dubai"
+    TIMEZONE: str = "Asia/Dubai"
     
     # Prayer durations in minutes
-    ADHAN_DURATIONS = {
+    ADHAN_DURATIONS: ClassVar[dict[str, int]] = {
         "fajr": 25,
         "zuhr": 20,
         "asr": 20,
         "maghrib": 5,
         "isha": 20
     }
-    PRAYER_DURATION = 10
+    PRAYER_DURATION: ClassVar[int] = 10
     
     # Calendar colors
-    ADHAN_COLOR = "#008000"  # Green
-    PRAYER_COLOR = "#ba1e55"  # Proton Calendar's Cerise
+    ADHAN_COLOR: ClassVar[str] = "#008000"  # Green
+    PRAYER_COLOR: ClassVar[str] = "#ba1e55"  # Proton Calendar's Cerise
 
 class TokenManager:
     """Manages the authentication token for AWQAF API"""
@@ -50,7 +226,7 @@ class TokenManager:
         Load client configuration from config file.
         
         Returns:
-            dict: Configuration containing clientGuid and clientSecret
+            dict: Configuration containing credentials
             
         Raises:
             Exception: If config file is missing or invalid
@@ -59,20 +235,24 @@ class TokenManager:
             with open(cls.CONFIG_FILE, 'r') as f:
                 config = json.load(f)
                 
-            required_fields = {'clientGuid', 'clientSecret'}
-            if not all(field in config for field in required_fields):
+            # Check if we have client credentials (traditional method)
+            has_client_creds = all(field in config for field in ('clientGuid', 'clientSecret'))
+            # Check if we have direct tokens (automated extraction)
+            has_direct_tokens = all(field in config for field in ('clientAccessToken', 'clientRefreshToken'))
+            
+            if not (has_client_creds or has_direct_tokens):
                 raise KeyError("Missing required fields in config file")
                 
             return config
         except FileNotFoundError:
-            raise Exception(
+            raise ConfigError(
                 f"Configuration file '{cls.CONFIG_FILE}' not found. "
                 "Please create it with your client credentials."
             )
         except json.JSONDecodeError as e:
-            raise Exception(f"Invalid JSON format in {cls.CONFIG_FILE}: {str(e)}")
+            raise ConfigError(f"Invalid JSON format in {cls.CONFIG_FILE}: {e!s}")
         except KeyError as e:
-            raise Exception(f"Invalid config file structure: {str(e)}")
+            raise ConfigError(f"Invalid config file structure: {e!s}")
     
     @classmethod
     def get_token(cls) -> str:
@@ -89,7 +269,7 @@ class TokenManager:
             with open(cls.TOKEN_FILE, 'r') as f:
                 try:
                     token_data = json.load(f)
-                except json.JSONDecodeError as e:
+                except json.JSONDecodeError:
                     return cls.refresh_token()
                 
                 # Validate token data structure
@@ -111,7 +291,7 @@ class TokenManager:
     @classmethod
     def refresh_token(cls, retry_count: int = 0) -> str:
         """
-        Refresh the access token using client credentials.
+        Refresh the access token using client credentials or use direct tokens.
         
         Args:
             retry_count (int): Current retry attempt number
@@ -124,9 +304,25 @@ class TokenManager:
         """
         try:
             config = cls._load_config()
-        except Exception as e:
-            raise Exception(f"Failed to load configuration: {str(e)}")
+        except ConfigError as e:
+            raise TokenError(f"Failed to load configuration: {e!s}")
+        
+        # Check if we have direct tokens (from automated extraction)
+        if 'clientAccessToken' in config and 'clientRefreshToken' in config:
+            print("Using direct tokens from config")
+            token_data = {
+                'clientAccessToken': config['clientAccessToken'],
+                'clientRefreshToken': config['clientRefreshToken'],
+                'refreshTokenExpiryTime': config.get('refreshTokenExpiryTime')
+            }
             
+            # Save to token file for consistency
+            with open(cls.TOKEN_FILE, 'w') as f:
+                json.dump(token_data, f, indent=4)
+            
+            return token_data['clientAccessToken']
+            
+        # Original method: use client credentials to get tokens
         headers = {
             "Content-Type": "application/json",
             "Accept": "application/json"
@@ -164,16 +360,17 @@ class TokenManager:
                 import time
                 time.sleep(cls.RETRY_DELAY * (retry_count + 1))
                 return cls.refresh_token(retry_count + 1)
-            raise Exception(f"Failed to refresh token after {cls.MAX_RETRIES} attempts: {str(e)}")
+            raise TokenError(f"Failed to refresh token after {cls.MAX_RETRIES} attempts: {e!s}")
 
 class AWQAFApi:
     """Handles interactions with the AWQAF Prayer Times API"""
-    BASE_URL = "https://mobileappapi.awqaf.gov.ae/APIS/v2/prayer-time/prayertimes"
-    LOCATIONS_URL = "https://mobileappapi.awqaf.gov.ae/APIS/v2/prayer-time/EmiratesAndCities"
+    BASE_URL = "https://mobileappapi.awqaf.gov.ae/APIS/v3/prayer-time/prayertimes"
+    LOCATIONS_URL = "https://mobileappapi.awqaf.gov.ae/APIS/v3/prayer-time/EmiratesAndCities"
     LOCATIONS_CACHE_FILE = "locations_cache.json"
+    CONTEXT_FILE = "browser_context.json"
     
     @classmethod
-    def get_locations(cls) -> Dict[str, Any]:
+    def get_locations(cls) -> dict[str, Any]:
         """
         Get emirates and cities data from cache or API.
         
@@ -185,8 +382,15 @@ class AWQAFApi:
             if os.path.exists(cls.LOCATIONS_CACHE_FILE):
                 with open(cls.LOCATIONS_CACHE_FILE, 'r') as f:
                     return json.load(f)
-        except Exception:
+        except (OSError, json.JSONDecodeError):
             pass  # If any error occurs reading cache, fetch from API
+        
+        # Try using Playwright if browser context is available
+        if os.path.exists(cls.CONTEXT_FILE):
+            try:
+                return cls._fetch_locations_playwright()
+            except (OSError, ValueError, RuntimeError):
+                pass  # Fall back to regular API
             
         # Prepare API request
         headers = {
@@ -227,17 +431,17 @@ class AWQAFApi:
                 json.dump(data, f, indent=2)
                 
             return data
-        except Exception as e:
-            print(f"Error fetching locations: {str(e)}")
+        except (requests.RequestException, json.JSONDecodeError) as e:
+            print(f"Error fetching locations: {e!s}")
             return {"emirates": [], "cities": []}
             
     @classmethod
-    def get_emirates(cls) -> List[Dict[str, str]]:
+    def get_emirates(cls) -> list[dict[str, str]]:
         """Get list of all emirates"""
         return cls.get_locations().get("emirates", [])
         
     @classmethod
-    def get_cities_for_emirate(cls, emirate: str) -> List[Dict[str, Any]]:
+    def get_cities_for_emirate(cls, emirate: str) -> list[dict[str, Any]]:
         """
         Get list of cities for a specific emirate
         
@@ -264,8 +468,145 @@ class AWQAFApi:
             if city.get("emirate") == emirate_id
         ]
     
+    @classmethod
+    def _fetch_locations_playwright(cls) -> dict[str, Any]:
+        """Fetch locations using Playwright with saved browser context."""
+        async def _fetch():
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                context = await browser.new_context(storage_state=cls.CONTEXT_FILE)
+                page = await context.new_page()
+                
+                # Set authorization header from saved tokens
+                try:
+                    with open(CONFIG_FILE) as f:
+                        config = json.load(f)
+                    if 'clientAccessToken' in config:
+                        await page.set_extra_http_headers({
+                            'Authorization': f'Bearer {config["clientAccessToken"]}'
+                        })
+                except (OSError, json.JSONDecodeError):
+                    pass
+                
+                url = f"{cls.LOCATIONS_URL}?lang=ar"
+                response = await page.goto(url)
+                if response.status != 200:
+                    await context.close()
+                    await browser.close()
+                    raise APIError(f"API request failed: {response.status}")
+                
+                body = await response.body()
+                data = json.loads(body.decode())
+                
+                await context.close()
+                await browser.close()
+                return data
+        
+        return asyncio.run(_fetch())
+    
+    @classmethod
+    def _fetch_prayer_times_playwright(cls, year: int, month: int, day: int | None, city: str) -> dict[str, Any]:
+        """Fetch prayer times using Playwright with saved browser context."""
+        import calendar
+        
+        # Format dates for API request
+        if day:
+            start_date = end_date = f"{year}-{month:02d}-{day:02d}"
+        else:
+            _, last_day = calendar.monthrange(year, month)
+            start_date = f"{year}-{month:02d}-01"
+            end_date = f"{year}-{month:02d}-{last_day}"
+        
+        url = f"{cls.BASE_URL}/{start_date}/{end_date}?lang=ar"
+        
+        async def _fetch():
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                context = await browser.new_context(storage_state=cls.CONTEXT_FILE)
+                page = await context.new_page()
+                
+                # Set authorization header from saved tokens
+                try:
+                    with open(CONFIG_FILE) as f:
+                        config = json.load(f)
+                    if 'clientAccessToken' in config:
+                        await page.set_extra_http_headers({
+                            'Authorization': f'Bearer {config["clientAccessToken"]}'
+                        })
+                except (OSError, json.JSONDecodeError):
+                    pass
+                
+                response = await page.goto(url)
+                if response.status != 200:
+                    await context.close()
+                    await browser.close()
+                    raise APIError(f"API request failed: {response.status}")
+                
+                body = await response.body()
+                data = json.loads(body.decode())
+                
+                await context.close()
+                await browser.close()
+                return data
+        
+        data = asyncio.run(_fetch())
+        
+        # Format the data to match the expected structure
+        formatted_data = {
+            "prayertimes": []
+        }
+        
+        # Process each day's prayer times
+        for item in data.get('prayerData', []):
+            try:
+                # Check if this is for the requested city
+                if item.get('areaNameEn', '').lower() != city.lower():
+                    continue
+                
+                # Get the date
+                date = item.get('gDate', '').split('T')[0]
+                if not date:
+                    continue
+                
+                # Extract prayer times
+                prayer_times = {}
+                for prayer, api_field in [
+                    ('fajr', 'fajr'),
+                    ('zuhr', 'zuhr'),
+                    ('asr', 'asr'),
+                    ('maghrib', 'maghrib'),
+                    ('isha', 'isha')
+                ]:
+                    time_str = item.get(api_field, '')
+                    if time_str:
+                        # Extract just the time part (HH:MM:SS) from the datetime string
+                        time_part = time_str.split('T')[1].split('.')[0]
+                        # Convert to 24-hour format
+                        try:
+                            time_obj = datetime.strptime(time_part, '%H:%M:%S').replace(tzinfo=pytz.timezone(PrayerConfig.TIMEZONE))
+                            prayer_times[prayer] = time_obj.strftime('%H:%M')
+                        except ValueError:
+                            print(f"Warning: Could not parse time {time_part} for {prayer}")
+                            prayer_times[prayer] = ''
+                    else:
+                        prayer_times[prayer] = ''
+                
+                # Add prayer times
+                formatted_data["prayertimes"].append({
+                    "date": date,
+                    "timings": prayer_times
+                })
+            except (ValueError, KeyError) as e:
+                print(f"Error processing prayer times for a day: {e!s}")
+                continue
+        
+        if not formatted_data["prayertimes"]:
+            raise ValueError(f"No prayer times data found for city: {city}")
+        
+        return formatted_data
+
     @staticmethod
-    def fetch_prayer_times(year: int, month: int, day: Optional[int], city: str) -> Dict[str, Any]:
+    def fetch_prayer_times(year: int, month: int, day: int | None, city: str) -> dict[str, Any]:
         """
         Fetch prayer times from AWQAF API
         Args:
@@ -276,6 +617,17 @@ class AWQAFApi:
         Returns:
             Dictionary containing prayer times data
         """
+        # Try using Playwright if browser context is available
+        if os.path.exists(AWQAFApi.CONTEXT_FILE):
+            try:
+                print("Using Playwright with saved browser context...")
+                return AWQAFApi._fetch_prayer_times_playwright(year, month, day, city)
+            except (OSError, ValueError, RuntimeError, APIError) as e:
+                print(f"Playwright fetch failed, falling back to regular API: {e}")
+        
+        # Fall back to regular API method
+        print("Using regular API method...")
+        
         # Format dates for API request
         if day:
             # If day is specified, fetch only that day
@@ -287,7 +639,7 @@ class AWQAFApi:
             end_date = f"{year}-{month:02d}-{last_day:02d}"
         
         # Prepare API request
-        url = f"{AWQAFApi.BASE_URL}/{start_date}/{end_date}"
+        url = f"{AWQAFApi.BASE_URL}/{start_date}/{end_date}?lang=ar"
         
         def make_request(use_refresh_token=False):
             if use_refresh_token:
@@ -355,7 +707,7 @@ class AWQAFApi:
                             time_part = time_str.split('T')[1].split('.')[0]
                             # Convert to 24-hour format
                             try:
-                                time_obj = datetime.strptime(time_part, '%H:%M:%S')
+                                time_obj = datetime.strptime(time_part, '%H:%M:%S').replace(tzinfo=pytz.timezone(PrayerConfig.TIMEZONE))
                                 prayer_times[prayer] = time_obj.strftime('%H:%M')
                             except ValueError:
                                 print(f"Warning: Could not parse time {time_part} for {prayer}")
@@ -368,8 +720,8 @@ class AWQAFApi:
                         "date": date,
                         "timings": prayer_times
                     })
-                except Exception as e:
-                    print(f"Error processing prayer times for a day: {str(e)}")
+                except (ValueError, KeyError) as e:
+                    print(f"Error processing prayer times for a day: {e!s}")
                     continue
             
             if not formatted_data["prayertimes"]:
@@ -378,15 +730,15 @@ class AWQAFApi:
             return formatted_data
             
         except requests.RequestException as e:
-            raise Exception(f"Failed to fetch prayer times: {str(e)}")
+            raise APIError(f"Failed to fetch prayer times: {e!s}")
 
 class CalendarGenerator:
     """Handles generation of .ics calendar files"""
-    def __init__(self, prayer_data: Dict[str, Any], city: str, emirate: str):
+    def __init__(self, prayer_data: dict[str, Any], city: str, emirate: str):
         self.prayer_data = prayer_data
         self.city = city
         self.emirate = emirate
-        self.first_date = datetime.strptime(prayer_data["prayertimes"][0]["date"], "%Y-%m-%d")
+        self.first_date = datetime.strptime(prayer_data["prayertimes"][0]["date"], "%Y-%m-%d").replace(tzinfo=pytz.timezone(PrayerConfig.TIMEZONE))
     
     def _create_base_calendar(self) -> Calendar:
         """Create a base calendar with common properties"""
@@ -465,7 +817,7 @@ class CalendarGenerator:
         """Parse prayer time string into datetime object"""
         return datetime.fromisoformat(time_str).replace(tzinfo=pytz.timezone(PrayerConfig.TIMEZONE))
     
-    def _get_output_path(self, day: Optional[int] = None) -> Tuple[str, str]:
+    def _get_output_path(self, day: int | None = None) -> tuple[str, str]:
         """Get output directory and filename for calendar file"""
         year = self.first_date.year
         month_name = self.first_date.strftime("%B")
@@ -481,14 +833,11 @@ class CalendarGenerator:
         else:
             # Monthly calendar
             output_dir = base_dir
-            last_day = self.prayer_data["prayertimes"][-1]["date"]
-            first_day_num = self.first_date.day
-            last_day_num = datetime.strptime(last_day, "%Y-%m-%d").day
             filename = f"{month_name}{year}.ics"
         
         return output_dir, filename
     
-    def generate(self, day: Optional[int] = None) -> str:
+    def generate(self, day: int | None = None) -> str:
         """
         Generate .ics calendar file
         Args:
@@ -504,7 +853,7 @@ class CalendarGenerator:
             
             # If specific day is requested, skip other days
             if day:
-                current_day = datetime.strptime(date, "%Y-%m-%d").day
+                current_day = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=pytz.timezone(PrayerConfig.TIMEZONE)).day
                 if current_day != day:
                     continue
             
@@ -523,8 +872,8 @@ class CalendarGenerator:
                     prayer_event = self._create_prayer_event(date, prayer, time, PrayerConfig.ADHAN_DURATIONS[prayer])
                     cal.add_component(prayer_event)
                     
-                except Exception as e:
-                    print(f"Error creating events for {date} {prayer}: {str(e)}")
+                except (ValueError, KeyError) as e:
+                    print(f"Error creating events for {date} {prayer}: {e!s}")
                     continue
         
         # Save calendar to file
@@ -546,21 +895,28 @@ Usage:
     python prayer-times-ics-generator.py [options]
 
 Options:
-    --city CITY         City name (default: Dubai)
-    --emirate EMIRATE   Emirate name (default: Dubai)
-    --year YEAR         Year (default: 2025)
-    --month MONTH       Month number (1-12)
-    --day DAY           Optional: Generate calendar for specific day only
-    --list-emirates    List all emirates
-    --list-cities      List all cities for the specified emirate
-    --show-help        Show this help message
+    --setup              Run guided setup for first-time users
+    --city CITY          City name (overrides default from setup)
+    --emirate EMIRATE    Emirate name (overrides default from setup)
+    --year YEAR          Year (default: current year)
+    --month MONTH        Month number (1-12, default: current month)
+    --day DAY            Optional: Generate calendar for specific day only
+    --list-emirates     List all emirates
+    --list-cities       List all cities for the specified emirate
+    --show-help         Show this help message
 
 Examples:
-    # Generate monthly calendar for Dubai, January 2025
-    python prayer-times-ics-generator.py --city Dubai --emirate Dubai --year 2025 --month 1
+    # First-time setup (recommended)
+    python prayer-times-ics-generator.py --setup
 
-    # Generate daily calendar for Dubai, January 15, 2025
-    python prayer-times-ics-generator.py --city Dubai --emirate Dubai --year 2025 --month 1 --day 15
+    # Generate calendar for current month/year using default location
+    python prayer-times-ics-generator.py
+
+    # Generate calendar for specific location and time
+    python prayer-times-ics-generator.py --city "Abu Dhabi" --emirate "Abu Dhabi" --year 2026 --month 10
+
+    # Generate daily calendar for specific day
+    python prayer-times-ics-generator.py --day 15
     
     # List all emirates
     python prayer-times-ics-generator.py --list-emirates
@@ -588,22 +944,165 @@ Events:
     """
     print(help_text)
 
+def guided_setup():
+    """Interactive guided setup for first-time users."""
+    print("\n" + "="*60)
+    print("UAE Prayer Times Calendar Generator - Guided Setup")
+    print("="*60 + "\n")
+    
+    # Check if config exists
+    if os.path.exists(CONFIG_FILE):
+        print(f"Configuration file '{CONFIG_FILE}' already exists.")
+        choice = input("Do you want to reconfigure? (y/n): ").strip().lower()
+        if choice != 'y':
+            print("Setup cancelled. Using existing configuration.")
+            return
+    
+    print("Step 1: API Credentials Setup")
+    print("-" * 40)
+    print("The generator needs credentials to access the AWQAF API.")
+    print("We can automatically extract these from the AWQAF website.\n")
+    
+    auto_extract = input("Would you like to automatically extract credentials? (y/n): ").strip().lower()
+    
+    if auto_extract == 'y':
+        print("\nStarting automatic credential extraction...")
+        try:
+            creds = asyncio.run(extract_credentials())
+            if creds:
+                print("\nCredentials extracted successfully!")
+            else:
+                print("\nAutomatic extraction failed. Please set up manually.")
+                print("Follow the manual instructions in the README.md file.")
+                return
+        except (OSError, ValueError, RuntimeError, APIError) as e:
+            print(f"\nError during extraction: {e}")
+            print("Please try manual setup instead.")
+            return
+    else:
+        print("\nManual setup selected.")
+        print("Please follow the manual instructions in README.md to set up credentials.")
+        print("Then run this script again with the --setup flag to continue.")
+        return
+    
+    print("\nStep 2: Location Selection")
+    print("-" * 40)
+    
+    # Fetch available emirates
+    print("Fetching available emirates...")
+    try:
+        emirates = AWQAFApi.get_emirates()
+        if not emirates:
+            print("Error: Could not fetch emirates. Please check your credentials.")
+            return
+        
+        print("\nAvailable emirates:")
+        for i, emirate in enumerate(emirates, 1):
+            print(f"  {i}. {emirate['emirateNameEn']}")
+        
+        emirate_choice = input(f"\nSelect an emirate (1-{len(emirates)}): ").strip()
+        try:
+            emirate_index = int(emirate_choice) - 1
+            if 0 <= emirate_index < len(emirates):
+                selected_emirate = emirates[emirate_index]
+                emirate_name = selected_emirate['emirateNameEn']
+                print(f"Selected: {emirate_name}")
+            else:
+                print("Invalid selection. Defaulting to Dubai.")
+                emirate_name = "Dubai"
+        except ValueError:
+            print("Invalid input. Defaulting to Dubai.")
+            emirate_name = "Dubai"
+        
+        # Fetch cities for selected emirate
+        print(f"\nFetching cities in {emirate_name}...")
+        cities = AWQAFApi.get_cities_for_emirate(emirate_name)
+        
+        if not cities:
+            print("Error: Could not fetch cities. Please check your credentials.")
+            return
+        
+        print(f"\nCities in {emirate_name}:")
+        for i, city in enumerate(cities, 1):
+            print(f"  {i}. {city['cityNameEn']}")
+        
+        city_choice = input(f"\nSelect a city (1-{len(cities)}): ").strip()
+        try:
+            city_index = int(city_choice) - 1
+            if 0 <= city_index < len(cities):
+                selected_city = cities[city_index]
+                city_name = selected_city['cityNameEn']
+                print(f"Selected: {city_name}")
+            else:
+                print("Invalid selection. Defaulting to Dubai.")
+                city_name = "Dubai"
+        except ValueError:
+            print("Invalid input. Defaulting to Dubai.")
+            city_name = "Dubai"
+        
+        # Save preferences
+        preferences = {
+            "default_emirate": emirate_name,
+            "default_city": city_name
+        }
+        
+        try:
+            with open(CONFIG_FILE) as f:
+                config = json.load(f)
+            config.update(preferences)
+        except (OSError, json.JSONDecodeError):
+            config = preferences
+        
+        with open(CONFIG_FILE, "w") as f:
+            json.dump(config, f, indent=2)
+        
+        print("\nStep 3: Default Settings")
+        print("-" * 40)
+        print(f"Default emirate: {emirate_name}")
+        print(f"Default city: {city_name}")
+        print("Default time period: Current month and year")
+        
+        print("\n" + "="*60)
+        print("Setup Complete!")
+        print("="*60)
+        print("\nYou can now generate prayer times calendars using:")
+        print("  python prayer-times-ics-generator.py")
+        print("\nOr specify different options:")
+        print("  python prayer-times-ics-generator.py --city \"Abu Dhabi\" --emirate \"Abu Dhabi\"")
+        print("  python prayer-times-ics-generator.py --year 2026 --month 10")
+        
+    except (OSError, ValueError, RuntimeError, APIError) as e:
+        print(f"\nError during setup: {e}")
+        import traceback
+        traceback.print_exc()
+
+
 def main():
     """Main function to handle command line arguments and generate calendar"""
+    # Get current date for defaults
+    current_date = datetime.now(pytz.timezone(PrayerConfig.TIMEZONE))
+    current_year = current_date.year
+    current_month = current_date.month
+    
     parser = argparse.ArgumentParser(
         description='Generate prayer times calendar',
         formatter_class=argparse.RawTextHelpFormatter
     )
-    parser.add_argument('--city', type=str, default='Dubai', help='City name')
-    parser.add_argument('--emirate', type=str, default='Dubai', help='Emirate name')
-    parser.add_argument('--year', type=int, default=2025, help='Year')
-    parser.add_argument('--month', type=int, default=1, help='Month')
+    parser.add_argument('--setup', action='store_true', help='Run guided setup for first-time users')
+    parser.add_argument('--city', type=str, help='City name (overrides default from setup)')
+    parser.add_argument('--emirate', type=str, help='Emirate name (overrides default from setup)')
+    parser.add_argument('--year', type=int, default=current_year, help=f'Year (default: {current_year})')
+    parser.add_argument('--month', type=int, default=current_month, help=f'Month (default: {current_month})')
     parser.add_argument('--day', type=int, help='Optional: Specific day to generate calendar for')
     parser.add_argument('--list-emirates', action='store_true', help='List all emirates')
     parser.add_argument('--list-cities', action='store_true', help='List all cities for the specified emirate')
     parser.add_argument('--show-help', action='store_true', help='Show detailed help message')
     
     args = parser.parse_args()
+    
+    if args.setup:
+        guided_setup()
+        return
     
     if args.show_help:
         print_help()
@@ -631,29 +1130,71 @@ def main():
             print(f"\nNo cities found for {args.emirate} emirate or an error occurred.")
         return
     
+    # Load default settings from config if available
+    config_city = args.city
+    config_emirate = args.emirate
+    
+    try:
+        with open(CONFIG_FILE) as f:
+            config = json.load(f)
+            if not args.city and 'default_city' in config:
+                config_city = config['default_city']
+            if not args.emirate and 'default_emirate' in config:
+                config_emirate = config['default_emirate']
+    except (OSError, json.JSONDecodeError):
+        pass
+    
+    # Use command line args or defaults
+    city = config_city or 'Dubai'
+    emirate = config_emirate or 'Dubai'
+    
+    # Check if credentials are configured
+    try:
+        with open(CONFIG_FILE) as f:
+            config = json.load(f)
+            has_creds = 'clientGuid' in config or 'clientAccessToken' in config
+            has_defaults = 'default_city' in config and 'default_emirate' in config
+    except (OSError, json.JSONDecodeError):
+        has_creds = False
+        has_defaults = False
+    
+    if not has_creds:
+        print("No credentials found in config.json")
+        print("Starting guided setup...")
+        guided_setup()
+        return
+    
+    if not has_defaults:
+        print("Credentials found, but no default location set.")
+        print("Run: python prayer-times-ics-generator.py --setup")
+        print("to set your preferred location, or specify location with --city and --emirate flags.")
+        # Continue with current values
+    
     try:
         # Fetch prayer times from API
-        prayer_data = AWQAFApi.fetch_prayer_times(args.year, args.month, args.day, args.city)
+        prayer_data = AWQAFApi.fetch_prayer_times(args.year, args.month, args.day, city)
         
         # Generate calendar file
-        generator = CalendarGenerator(prayer_data, args.city, args.emirate)
+        generator = CalendarGenerator(prayer_data, city, emirate)
         filepath = generator.generate(args.day)
         
-        print(f"\nSuccessfully generated prayer time calendar file!")
+        print("\nSuccessfully generated prayer time calendar file!")
         print(f"File is located at: {filepath}")
+        print(f"Location: {city}, {emirate}")
+        print(f"Period: {calendar.month_name[args.month]} {args.year}")
     except json.JSONDecodeError as e:
-        print(f"JSON parsing error: {str(e)}")
+        print(f"JSON parsing error: {e!s}")
         print(f"File path: {e.doc}")
         print(f"Line number: {e.lineno}")
         print(f"Column: {e.colno}")
         print(f"Position: {e.pos}")
     except requests.exceptions.RequestException as e:
-        print(f"API request error: {str(e)}")
+        print(f"API request error: {e!s}")
         if hasattr(e, 'response') and e.response is not None:
             print(f"Response status code: {e.response.status_code}")
             print(f"Response content: {e.response.text}")
-    except Exception as e:
-        print(f"Error generating calendar: {str(e)}")
+    except (ConfigError, TokenError, APIError) as e:
+        print(f"Error generating calendar: {e!s}")
         import traceback
         print(f"Full error: {traceback.format_exc()}")
 

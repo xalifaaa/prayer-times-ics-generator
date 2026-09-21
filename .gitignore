@@ -1,6 +1,7 @@
 # Sensitive configuration files
 config.json
 auth_token.json
+browser_context.json
 
 # Python
 __pycache__/
@@ -24,6 +25,9 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+
+# Playwright
+.playwright/
 
 # IDE
 .idea/
