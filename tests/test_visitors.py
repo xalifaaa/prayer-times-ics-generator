@@ -1,5 +1,7 @@
+import importlib
 import importlib.util
 import json
+import os
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -62,3 +64,59 @@ class NextBadgeTests(unittest.TestCase):
     def test_main_rejects_non_integer_arg(self):
         with self.assertRaises(SystemExit):
             update_visitors.main(['not-a-number'])
+
+
+class VisitorFloorTests(unittest.TestCase):
+    """The app floors the live Application Insights count at the committed
+    visitors.json high-water mark, so the on-site counter never decays."""
+
+    @classmethod
+    def setUpClass(cls):
+        with patch.dict(os.environ, {'APPLICATIONINSIGHTS_CONNECTION_STRING': ''}):
+            cls.web = importlib.import_module('src.app')
+
+    def setUp(self):
+        self.root = Path(self.enterContext(TemporaryDirectory()))
+        self.enterContext(patch.object(self.web, 'root_dir', str(self.root)))
+        self.web._count_cache.update(value=None, fetched_at=0)
+
+    def write_badge(self, text):
+        (self.root / 'visitors.json').write_text(text, encoding='utf-8')
+
+    def test_persisted_count_parsed(self):
+        self.write_badge(PREVIOUS)
+        self.assertEqual(self.web._persisted_visitor_count(), 42)
+
+    def test_persisted_count_missing_or_malformed(self):
+        self.assertIsNone(self.web._persisted_visitor_count())
+        for text in ('{', 'null', '{"message": "many"}', '{"message": 42}'):
+            with self.subTest(text=text):
+                self.write_badge(text)
+                self.assertIsNone(self.web._persisted_visitor_count())
+
+    def test_floor_when_live_count_is_lower(self):
+        self.write_badge(PREVIOUS)
+        with patch.object(self.web, '_live_visitor_count', return_value=2):
+            self.assertEqual(self.web.get_visitor_count(), 42)
+
+    def test_live_count_wins_when_higher(self):
+        self.write_badge(PREVIOUS)
+        with patch.object(self.web, '_live_visitor_count', return_value=100):
+            self.assertEqual(self.web.get_visitor_count(), 100)
+
+    def test_floor_when_live_count_unavailable(self):
+        self.write_badge(PREVIOUS)
+        with patch.object(self.web, '_live_visitor_count', return_value=None):
+            self.assertEqual(self.web.get_visitor_count(), 42)
+
+    def test_none_when_no_data(self):
+        with patch.object(self.web, '_live_visitor_count', return_value=None):
+            self.assertIsNone(self.web.get_visitor_count())
+
+    def test_api_and_badge_use_floored_count(self):
+        self.write_badge(PREVIOUS)
+        with patch.object(self.web, '_live_visitor_count', return_value=2), \
+                patch.dict(self.web.app.config, {'TESTING': True}):
+            client = self.web.app.test_client()
+            self.assertEqual(client.get('/api/visitors').get_json()['count'], 42)
+            self.assertEqual(client.get('/badge/visitors').get_json()['message'], '42')

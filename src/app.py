@@ -137,7 +137,17 @@ def track_unique_visitor(response):
     return response
 
 
-def get_visitor_count():
+def _persisted_visitor_count():
+    """High-water mark committed to visitors.json by the daily snapshot workflow."""
+    try:
+        badge = json.loads((Path(root_dir) / 'visitors.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+    message = badge.get('message') if isinstance(badge, dict) else None
+    return int(message) if isinstance(message, str) and message.isdigit() else None
+
+
+def _live_visitor_count():
     """Query Application Insights for the count of unique visitors (cached)."""
     if not (AI_APP_ID and AI_API_KEY):
         return None
@@ -147,7 +157,7 @@ def get_visitor_count():
     try:
         resp = requests.get(
             f'https://api.applicationinsights.io/v1/apps/{AI_APP_ID}/query',
-            params={'query': 'traces | where message startswith "unique_visitor " | summarize dcount(message)'},
+            params={'query': 'traces | where message startswith "unique_visitor " | summarize by message | count'},
             headers={'x-api-key': AI_API_KEY}, timeout=10)
         resp.raise_for_status()
         count = int(resp.json()['tables'][0]['rows'][0][0])
@@ -156,6 +166,16 @@ def get_visitor_count():
     except Exception as e:  # noqa: BLE001
         print(f'Error fetching visitor count: {e}')
         return _count_cache['value']
+
+
+def get_visitor_count():
+    """Unique visitors: the live count floored at the committed high-water mark.
+
+    Application Insights retains telemetry for 90 days, so the live figure
+    decays as old visitors age out; visitors.json never does.
+    """
+    counts = [c for c in (_live_visitor_count(), _persisted_visitor_count()) if c is not None]
+    return max(counts) if counts else None
 
 
 def _static_assets_ready():
