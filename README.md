@@ -1,7 +1,7 @@
 # UAE Prayer (Salah) Times Calendar Event Generator
 
 ![Working Status](https://github.com/xalifaaa/prayer-times-ics-generator/actions/workflows/working.yml/badge.svg)
-![Unique Visitors](https://img.shields.io/endpoint?url=https%3A%2F%2Fuae-salah-calendar-event-generator.azurewebsites.net%2Fbadge%2Fvisitors)
+![Unique Visitors](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fxalifaaa%2Fprayer-times-ics-generator%2Fmain%2Fvisitors.json)
 
 **Live app:** [https://uae-salah-calendar-event-generator.azurewebsites.net](https://uae-salah-calendar-event-generator.azurewebsites.net)
 

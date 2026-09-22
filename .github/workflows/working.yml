@@ -3,6 +3,7 @@ name: Working
 on:
   push:
     branches: [ main ]
+    paths-ignore: [ 'visitors.json' ]
   pull_request:
     branches: [ main ]
   schedule:
@@ -32,7 +33,7 @@ jobs:
       run: ruff check src/ main.py scripts/ tests/
     
     - name: Check Python syntax
-      run: python -m py_compile main.py src/app.py src/generator.py scripts/pregenerate.py tests/test_health.py tests/test_ui.py
+      run: python -m py_compile main.py src/app.py src/generator.py scripts/pregenerate.py scripts/update_visitors.py tests/test_health.py tests/test_ui.py tests/test_visitors.py
     
     - name: Test help command
       run: python main.py --help

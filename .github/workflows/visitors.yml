@@ -1,0 +1,52 @@
+name: Update visitor count
+
+on:
+  schedule:
+    # Run daily at 3:00 AM UTC
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Azure Login
+        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Query unique visitor count
+        run: |
+          az config set extension.use_dynamic_install=yes_without_prompt
+          COUNT=$(az monitor app-insights query \
+            --app "${{ vars.APP_NAME }}-insights" \
+            --resource-group "${{ vars.RESOURCE_GROUP }}" \
+            --analytics-query 'traces | where message startswith "unique_visitor " | summarize by message | count' \
+            --query 'tables[0].rows[0][0]' -o tsv)
+          echo "COUNT=$COUNT" >> "$GITHUB_ENV"
+          echo "Queried visitor count: $COUNT"
+
+      - name: Update visitors.json
+        run: python scripts/update_visitors.py "$COUNT"
+
+      - name: Commit and push
+        run: |
+          if git diff --quiet -- visitors.json; then
+            echo "No change; skipping commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          NEW=$(python -c "import json; print(json.load(open('visitors.json'))['message'])")
+          git add visitors.json
+          git commit -m "Update visitor count to ${NEW} [skip ci]"
+          git push origin "HEAD:${{ github.ref_name }}"
