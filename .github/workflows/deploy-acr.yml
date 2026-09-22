@@ -10,11 +10,6 @@ on:
 
 env:
   IMAGE_NAME: prayer-times-ics-generator
-  ACR_NAME: ${{ vars.ACR_NAME }}
-  APP_NAME: ${{ vars.APP_NAME }}
-  RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP }}
-  # Populated at runtime via $GITHUB_ENV by the "Get ACR login server" step
-  ACR_LOGIN_SERVER: ''
 
 jobs:
   build-and-deploy:
@@ -33,69 +28,65 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Get ACR login server
-        run: |
-          echo "ACR_LOGIN_SERVER=$(az acr show --name ${{ env.ACR_NAME }} --query loginServer -o tsv)" >> $GITHUB_ENV
-
       - name: Login to Azure Container Registry
         run: |
-          az acr login --name ${{ env.ACR_NAME }}
+          az acr login --name ${{ vars.ACR_NAME }}
 
       - name: Build and Push Docker Image
         run: |
-          docker build -t ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ github.sha }} .
-          docker tag ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
-                     ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:latest
+          docker build -t ${{ vars.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ github.sha }} .
+          docker tag ${{ vars.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
+                     ${{ vars.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:latest
 
-          docker push ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
-          docker push ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:latest
+          docker push ${{ vars.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          docker push ${{ vars.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:latest
 
       - name: Ensure App Service Plan exists
         run: |
-          az appservice plan show --name "${{ env.APP_NAME }}-plan" --resource-group "${{ env.RESOURCE_GROUP }}" >/dev/null 2>&1 || \
-          az appservice plan create --name "${{ env.APP_NAME }}-plan" --resource-group "${{ env.RESOURCE_GROUP }}" --is-linux --sku B1
+          az appservice plan show --name "${{ vars.APP_NAME }}-plan" --resource-group "${{ vars.RESOURCE_GROUP }}" >/dev/null 2>&1 || \
+          az appservice plan create --name "${{ vars.APP_NAME }}-plan" --resource-group "${{ vars.RESOURCE_GROUP }}" --is-linux --sku B1
 
       - name: Ensure Web App exists
         run: |
-          az webapp show --name "${{ env.APP_NAME }}" --resource-group "${{ env.RESOURCE_GROUP }}" >/dev/null 2>&1 || \
-          az webapp create --name "${{ env.APP_NAME }}" --resource-group "${{ env.RESOURCE_GROUP }}" --plan "${{ env.APP_NAME }}-plan" --deployment-container-image-name "mcr.microsoft.com/appsvc/staticsite:latest"
+          az webapp show --name "${{ vars.APP_NAME }}" --resource-group "${{ vars.RESOURCE_GROUP }}" >/dev/null 2>&1 || \
+          az webapp create --name "${{ vars.APP_NAME }}" --resource-group "${{ vars.RESOURCE_GROUP }}" --plan "${{ vars.APP_NAME }}-plan" --deployment-container-image-name "mcr.microsoft.com/appsvc/staticsite:latest"
 
       - name: Ensure Application Insights exists
         run: |
-          LOCATION=$(az group show --name "${{ env.RESOURCE_GROUP }}" --query location -o tsv)
-          az monitor log-analytics workspace show --resource-group "${{ env.RESOURCE_GROUP }}" --workspace-name "${{ env.APP_NAME }}-logs" >/dev/null 2>&1 || \
-          az monitor log-analytics workspace create --resource-group "${{ env.RESOURCE_GROUP }}" --workspace-name "${{ env.APP_NAME }}-logs" --location "$LOCATION" > /dev/null
-          az monitor app-insights component show --app "${{ env.APP_NAME }}-insights" --resource-group "${{ env.RESOURCE_GROUP }}" >/dev/null 2>&1 || \
-          az monitor app-insights component create --app "${{ env.APP_NAME }}-insights" --resource-group "${{ env.RESOURCE_GROUP }}" --location "$LOCATION" --kind web --workspace "${{ env.APP_NAME }}-logs" > /dev/null
+          LOCATION=$(az group show --name "${{ vars.RESOURCE_GROUP }}" --query location -o tsv)
+          az monitor log-analytics workspace show --resource-group "${{ vars.RESOURCE_GROUP }}" --workspace-name "${{ vars.APP_NAME }}-logs" >/dev/null 2>&1 || \
+          az monitor log-analytics workspace create --resource-group "${{ vars.RESOURCE_GROUP }}" --workspace-name "${{ vars.APP_NAME }}-logs" --location "$LOCATION" > /dev/null
+          az monitor app-insights component show --app "${{ vars.APP_NAME }}-insights" --resource-group "${{ vars.RESOURCE_GROUP }}" >/dev/null 2>&1 || \
+          az monitor app-insights component create --app "${{ vars.APP_NAME }}-insights" --resource-group "${{ vars.RESOURCE_GROUP }}" --location "$LOCATION" --kind web --workspace "${{ vars.APP_NAME }}-logs" > /dev/null
 
       - name: Configure container image and ACR credentials
         run: |
-          az acr update --name "${{ env.ACR_NAME }}" --admin-enabled true
-          ACR_USER=$(az acr credential show --name "${{ env.ACR_NAME }}" --query username -o tsv)
-          ACR_PASS=$(az acr credential show --name "${{ env.ACR_NAME }}" --query "passwords[0].value" -o tsv)
+          az acr update --name "${{ vars.ACR_NAME }}" --admin-enabled true
+          ACR_USER=$(az acr credential show --name "${{ vars.ACR_NAME }}" --query username -o tsv)
+          ACR_PASS=$(az acr credential show --name "${{ vars.ACR_NAME }}" --query "passwords[0].value" -o tsv)
           echo "::add-mask::$ACR_PASS"
           az webapp config container set \
-            --name "${{ env.APP_NAME }}" \
-            --resource-group "${{ env.RESOURCE_GROUP }}" \
-            --docker-custom-image-name "${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ github.sha }}" \
-            --docker-registry-server-url "https://${{ env.ACR_LOGIN_SERVER }}" \
+            --name "${{ vars.APP_NAME }}" \
+            --resource-group "${{ vars.RESOURCE_GROUP }}" \
+            --docker-custom-image-name "${{ vars.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ github.sha }}" \
+            --docker-registry-server-url "https://${{ vars.ACR_LOGIN_SERVER }}" \
             --docker-registry-server-user "$ACR_USER" \
             --docker-registry-server-password "$ACR_PASS" > /dev/null
 
       - name: Configure app settings
         run: |
-          AI_CONN=$(az monitor app-insights component show --app "${{ env.APP_NAME }}-insights" --resource-group "${{ env.RESOURCE_GROUP }}" --query connectionString -o tsv)
-          AI_APPID=$(az monitor app-insights component show --app "${{ env.APP_NAME }}-insights" --resource-group "${{ env.RESOURCE_GROUP }}" --query appId -o tsv)
+          AI_CONN=$(az monitor app-insights component show --app "${{ vars.APP_NAME }}-insights" --resource-group "${{ vars.RESOURCE_GROUP }}" --query connectionString -o tsv)
+          AI_APPID=$(az monitor app-insights component show --app "${{ vars.APP_NAME }}-insights" --resource-group "${{ vars.RESOURCE_GROUP }}" --query appId -o tsv)
           # API key secrets are only returned on create; recreate the key each deploy
-          if az monitor app-insights api-key show --app "${{ env.APP_NAME }}-insights" --resource-group "${{ env.RESOURCE_GROUP }}" --query "[?name=='site-reader'].name | [0]" -o tsv | grep -q site-reader; then
-            az monitor app-insights api-key delete --app "${{ env.APP_NAME }}-insights" --resource-group "${{ env.RESOURCE_GROUP }}" --api-key site-reader --yes
+          if az monitor app-insights api-key show --app "${{ vars.APP_NAME }}-insights" --resource-group "${{ vars.RESOURCE_GROUP }}" --query "[?name=='site-reader'].name | [0]" -o tsv | grep -q site-reader; then
+            az monitor app-insights api-key delete --app "${{ vars.APP_NAME }}-insights" --resource-group "${{ vars.RESOURCE_GROUP }}" --api-key site-reader --yes
           fi
-          AI_KEY=$(az monitor app-insights api-key create --app "${{ env.APP_NAME }}-insights" --resource-group "${{ env.RESOURCE_GROUP }}" --api-key site-reader --read-properties ReadTelemetry --query apiKey -o tsv)
+          AI_KEY=$(az monitor app-insights api-key create --app "${{ vars.APP_NAME }}-insights" --resource-group "${{ vars.RESOURCE_GROUP }}" --api-key site-reader --read-properties ReadTelemetry --query apiKey -o tsv)
           echo "::add-mask::$AI_CONN"
           echo "::add-mask::$AI_KEY"
           az webapp config appsettings set \
-            --name "${{ env.APP_NAME }}" \
-            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --name "${{ vars.APP_NAME }}" \
+            --resource-group "${{ vars.RESOURCE_GROUP }}" \
             --settings WEBSITES_PORT=8080 STATIC_MODE=true \
               WEBSITE_WARMUP_PATH=/health WEBSITE_WARMUP_STATUSES=200 \
               APPLICATIONINSIGHTS_CONNECTION_STRING="$AI_CONN" \
@@ -105,18 +96,18 @@ jobs:
       - name: Enable App Service Health Check
         run: |
           az webapp config set \
-            --name "${{ env.APP_NAME }}" \
-            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --name "${{ vars.APP_NAME }}" \
+            --resource-group "${{ vars.RESOURCE_GROUP }}" \
             --generic-configurations '{"healthCheckPath":"/health"}' \
             --output none
 
       - name: Restart App Service
         run: |
           az webapp restart \
-            --name ${{ env.APP_NAME }} \
-            --resource-group ${{ env.RESOURCE_GROUP }}
+            --name ${{ vars.APP_NAME }} \
+            --resource-group ${{ vars.RESOURCE_GROUP }}
 
       - name: Deployment Status
         run: |
           echo "Deployment complete!"
-          echo "App URL: https://${{ env.APP_NAME }}.azurewebsites.net"
+          echo "App URL: https://${{ vars.APP_NAME }}.azurewebsites.net"
