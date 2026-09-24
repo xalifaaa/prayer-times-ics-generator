@@ -134,3 +134,32 @@ class HealthCheckTests(unittest.TestCase):
         self.assert_health(503)
         self.create_assets()
         self.assert_health(200)
+
+
+class SeoFileTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        with patch.dict(os.environ, {'APPLICATIONINSIGHTS_CONNECTION_STRING': ''}):
+            cls.web = importlib.import_module('src.app')
+
+    def setUp(self):
+        self.enterContext(patch.dict(self.web.app.config, {'TESTING': True}))
+        self.client = self.web.app.test_client()
+
+    def test_sitemap_lists_homepage(self):
+        response = self.client.get('/sitemap.xml')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content_type, 'application/xml; charset=utf-8')
+        body = response.get_data(as_text=True)
+        self.assertIn('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">', body)
+        self.assertIn('<loc>http://localhost/</loc>', body)
+
+    def test_robots_points_at_sitemap(self):
+        response = self.client.get('/robots.txt')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content_type, 'text/plain; charset=utf-8')
+        body = response.get_data(as_text=True)
+        self.assertIn('User-agent: *', body)
+        self.assertIn('Sitemap: http://localhost/sitemap.xml', body)
+        for path in ('/api/', '/cities/', '/download/', '/setup', '/health', '/debug/'):
+            self.assertIn(f'Disallow: {path}', body)

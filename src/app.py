@@ -502,6 +502,40 @@ def badge_visitors():
     }
 
 
+@app.route('/robots.txt')
+def robots_txt():
+    """Crawler rules: index the app, skip APIs, downloads, and diagnostics."""
+    lines = [
+        'User-agent: *',
+        'Allow: /',
+        'Disallow: /api/',
+        'Disallow: /cities/',
+        'Disallow: /download/',
+        'Disallow: /setup',
+        'Disallow: /health',
+        'Disallow: /debug/',
+        '',
+        f'Sitemap: {url_for("sitemap_xml", _external=True)}',
+        '',
+    ]
+    return '\n'.join(lines), 200, {'Content-Type': 'text/plain; charset=utf-8'}
+
+
+@app.route('/sitemap.xml')
+def sitemap_xml():
+    """XML sitemap; the app is a single page, so it lists the homepage."""
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        '  <url>\n'
+        f'    <loc>{url_for("index", _external=True)}</loc>\n'
+        '    <changefreq>weekly</changefreq>\n'
+        '  </url>\n'
+        '</urlset>\n'
+    )
+    return xml, 200, {'Content-Type': 'application/xml; charset=utf-8'}
+
+
 @app.route('/debug/net')
 def debug_net():
     """Diagnostic endpoint: test connectivity to AWQAF services from this container"""
